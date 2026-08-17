@@ -114,7 +114,7 @@ def parse_djinni(api_key: str, keyword: str = "C#", target_role: str = "C# Devel
             start_time = time.time()
             chat_completion = client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama-3.1-8b-instant", # Если менял модель, оставь свое название
+                model="openai/gpt-oss-20b", # Если менял модель, оставь свое название
                 response_format={"type": "json_object"},
                 temperature=0.1
             )

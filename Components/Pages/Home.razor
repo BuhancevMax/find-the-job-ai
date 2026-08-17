@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @inject HttpClient Http
 @inject VacancyService VacancyService
+@inject ProtectedLocalStorage BrowserStorage
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
 @using BlazorApp1.Services
 @using System.Linq
 
@@ -147,6 +149,27 @@ else if (hasLoaded)
     {
         await LoadFromDb();
     }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Читаем из памяти только один раз при первой загрузке страницы
+        if (firstRender)
+        {
+            var keyResult = await BrowserStorage.GetAsync<string>("savedApiKey");
+            if (keyResult.Success && !string.IsNullOrEmpty(keyResult.Value)) 
+                apiKey = keyResult.Value;
+
+            var roleResult = await BrowserStorage.GetAsync<string>("savedRole");
+            if (roleResult.Success && !string.IsNullOrEmpty(roleResult.Value)) 
+                targetRole = roleResult.Value;
+
+            var expResult = await BrowserStorage.GetAsync<string>("savedExp");
+            if (expResult.Success && !string.IsNullOrEmpty(expResult.Value)) 
+                targetExp = expResult.Value;
+
+            // Говорим Блазору: "Мы обновили переменные, перерисуй интерфейс"
+            StateHasChanged();
+        }
+    }
     
     private string currentSortColumn = "AiMatchScore";
     private bool isAscending = false; 
@@ -241,6 +264,9 @@ else if (hasLoaded)
 
         try
         {
+            await BrowserStorage.SetAsync("savedApiKey", apiKey);
+            await BrowserStorage.SetAsync("savedRole", targetRole);
+            await BrowserStorage.SetAsync("savedExp", targetExp);
             string role = Uri.EscapeDataString(targetRole);
             string exp = Uri.EscapeDataString(targetExp);
             string key = Uri.EscapeDataString(apiKey);
