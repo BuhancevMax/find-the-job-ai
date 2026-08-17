@@ -200,3 +200,4 @@ D:\Projects\BlazorApp1\BlazorApp1\bin\Debug\net9.0\ru\Microsoft.CodeAnalysis.Wor
 D:\Projects\BlazorApp1\BlazorApp1\bin\Debug\net9.0\tr\Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
 D:\Projects\BlazorApp1\BlazorApp1\bin\Debug\net9.0\zh-Hans\Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
 D:\Projects\BlazorApp1\BlazorApp1\bin\Debug\net9.0\zh-Hant\Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+D:\Projects\BlazorApp1\BlazorApp1\obj\Debug\net9.0\BlazorApp1.sourcelink.json

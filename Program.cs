@@ -1,5 +1,6 @@
 using BlazorApp1.Components;
 using BlazorApp1.Data;
+using BlazorApp1.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,7 +9,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddHttpClient();
 builder.Services.AddDbContext<AppDbContext>();
-//builder.Services.AddDbContext<BlazorApp1.Data.AppDbContext>();
+builder.Services.AddScoped<VacancyService>();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
