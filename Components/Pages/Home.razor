@@ -22,9 +22,18 @@
         
         <!-- НОВЫЕ ФИЛЬТРЫ -->
         <div class="row">
-            <div class="col-md-6 mb-2">
+            <!-- 1. Ключевое слово для поиска на Djinni -->
+            <div class="col-md-4 mb-2">
                 <div class="input-group">
-                    <span class="input-group-text">💼 Желаемая должность</span>
+                    <span class="input-group-text">🔍 Поиск (Стек)</span>
+                    <input type="text" class="form-control" @bind="searchKeyword" placeholder="C#, Java, Python, QA..." />
+                </div>
+            </div>
+            
+            <!-- 2. Желаемая должность -->
+            <div class="col-md-4 mb-2">
+                <div class="input-group">
+                    <span class="input-group-text">💼 Должность</span>
                     <select class="form-select" @bind="targetRole">
                         <option value="Trainee/Junior Software Engineer (.NET)">Trainee/Junior .NET</option>
                         <option value="Middle Software Engineer (.NET)">Middle .NET</option>
@@ -33,9 +42,11 @@
                     </select>
                 </div>
             </div>
-            <div class="col-md-6 mb-2">
+
+            <!-- 3. Опыт -->
+            <div class="col-md-4 mb-2">
                 <div class="input-group">
-                    <span class="input-group-text">⏳ Твой опыт</span>
+                    <span class="input-group-text">⏳ Опыт</span>
                     <select class="form-select" @bind="targetExp">
                         <option value="Без коммерческого опыта (Студент)">Без коммерческого опыта</option>
                         <option value="Менее 1 года">Менее 1 года</option>
@@ -133,6 +144,7 @@ else if (hasLoaded)
 }
 
 @code {
+    private string searchKeyword = ""; // Значение по умолчанию
     private string apiKey = "";
     private string targetRole = "";
     private string targetExp = "";
@@ -154,6 +166,10 @@ else if (hasLoaded)
         // Читаем из памяти только один раз при первой загрузке страницы
         if (firstRender)
         {
+            var keywordResult = await BrowserStorage.GetAsync<string>("savedKeyword");
+            if (keywordResult.Success && !string.IsNullOrEmpty(keywordResult.Value)) 
+                searchKeyword = keywordResult.Value;
+            
             var keyResult = await BrowserStorage.GetAsync<string>("savedApiKey");
             if (keyResult.Success && !string.IsNullOrEmpty(keyResult.Value)) 
                 apiKey = keyResult.Value;
@@ -264,13 +280,15 @@ else if (hasLoaded)
 
         try
         {
+            await BrowserStorage.SetAsync("savedKeyword", searchKeyword);
             await BrowserStorage.SetAsync("savedApiKey", apiKey);
             await BrowserStorage.SetAsync("savedRole", targetRole);
             await BrowserStorage.SetAsync("savedExp", targetExp);
+            string keyword = Uri.EscapeDataString(searchKeyword);
             string role = Uri.EscapeDataString(targetRole);
             string exp = Uri.EscapeDataString(targetExp);
             string key = Uri.EscapeDataString(apiKey);
-            string requestUrl = $"http://127.0.0.1:8000/parse/djinni?keyword=C%23&api_key={key}&target_role={role}&target_exp={exp}";
+            string requestUrl = $"http://127.0.0.1:8000/parse/djinni?keyword={keyword}&api_key={key}&target_role={role}&target_exp={exp}";
             
             var response = await Http.GetFromJsonAsync<PythonApiResponse>(requestUrl);
             
