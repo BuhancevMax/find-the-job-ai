@@ -4,10 +4,11 @@
 @inject VacancyService VacancyService
 @using BlazorApp1.Services
 @using System.Linq
+@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Парсер Вакансий</PageTitle>
 
-<h1 class="mb-4">Сбор вакансий</h1>
+<h1 class="mb-4">Сбор вакансий с Djinni</h1>
 
 <!-- Блок настроек с вводом ключа -->
 <div class="card mb-4 shadow-sm">
@@ -63,6 +64,7 @@
         <button class="btn btn-outline-secondary ms-2" @onclick="LoadFromDb">
             🗄 Обновить из БД
         </button>
+        <!-- НОВАЯ КНОПКА ОЧИСТКИ -->
         <button class="btn btn-outline-danger ms-2" @onclick="ClearCache">
             🗑 Очистить кэш
         </button>
@@ -132,8 +134,8 @@ else if (hasLoaded)
 
 @code {
     private string apiKey = "";
-    private string targetRole = "";
-    private string targetExp = "";
+    private string targetRole = "Trainee/Junior Software Engineer (.NET)";
+    private string targetExp = "Студент 2 курса, без коммерческого опыта";
     private bool isLoading = false;
     private bool hasLoaded = false;
     private string errorMessage = "";
@@ -143,18 +145,20 @@ else if (hasLoaded)
 
     private bool IsButtonDisabled => isLoading || string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 10;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        await LoadFromDb();
+        // При старте приложения сразу грузим кэш из базы, не дергая Питон
+        LoadFromDb();
     }
-    
+    // Переменные для отслеживания текущей сортировки
     private string currentSortColumn = "AiMatchScore";
-    private bool isAscending = false; 
+    private bool isAscending = false; // По умолчанию сортируем от лучших к худшим (убывание)
 
     private void SortBy(string columnName)
     {
         if (currentSortColumn == columnName)
         {
+            // Если кликнули по той же колонке — меняем направление
             isAscending = !isAscending;
         }
         else
@@ -188,24 +192,23 @@ else if (hasLoaded)
         if (currentSortColumn != columnName) return "↕";
         return isAscending ? "▲" : "▼";
     }
-
     private async Task ClearCache()
     {
         try
         {
             await VacancyService.ClearCacheAsync();
-            await LoadFromDb();
+            await LoadFromDb(); // Сразу перерисовываем интерфейс
         }
         catch (Exception ex)
         {
             errorMessage = "Ошибка при очистке БД: " + ex.Message;
         }
     }
-
     private async Task LoadFromDb()
     {
         try
         {
+            // Теперь UI просто просит данные у сервиса
             displayVacancies = await VacancyService.GetVacanciesAsync(showOnlySaved);
             ApplySorting();
             hasLoaded = true;
@@ -215,17 +218,15 @@ else if (hasLoaded)
             errorMessage = "Ошибка чтения БД: " + ex.Message;
         }
     }
-
     private async Task RejectVacancy(BlazorApp1.Models.Vacancy vac)
     {
         await VacancyService.RejectVacancyAsync(vac);
-        displayVacancies.Remove(vac); 
+        displayVacancies.Remove(vac); // Убираем с экрана
     }
-
-    private async Task SetView(bool showSaved)
+    private void SetView(bool showSaved)
     {
         showOnlySaved = showSaved;
-        await LoadFromDb();
+        LoadFromDb();
     }
 
     private async Task ToggleSave(BlazorApp1.Models.Vacancy vac)
@@ -244,15 +245,32 @@ else if (hasLoaded)
             string role = Uri.EscapeDataString(targetRole);
             string exp = Uri.EscapeDataString(targetExp);
             string key = Uri.EscapeDataString(apiKey);
-            string requestUrl = $"http://127.0.0.1:8000/parse/djinni?keyword=C%23&api_key={key}&target_role={role}&target_exp={exp}";
-            
+            string requestUrl = $"http://127.0.0.1:8000/parse/djinni?keyword=C%23&api_key={Uri.EscapeDataString(apiKey)}";
             var response = await Http.GetFromJsonAsync<PythonApiResponse>(requestUrl);
             
             if (response != null && response.status == "success" && response.data != null && response.data.Any())
             {
-                await VacancyService.SaveNewVacanciesAsync(response.data);
+                foreach (var vac in response.data)
+                {
+                    // Проверяем, есть ли уже такая ссылка в базе
+                    var existing = DbContext.Vacancies.FirstOrDefault(v => v.Url == vac.Url);
+                    if (existing == null)
+                    {
+                        // Если нет - добавляем как новую
+                        DbContext.Vacancies.Add(vac);
+                    }
+                    else
+                    {
+                        // Если есть - просто обновляем дату последней проверки
+                        existing.ParsedAt = DateTime.Now;
+                        DbContext.Vacancies.Update(existing);
+                    }
+                }
+                DbContext.SaveChanges();
+                
+                // После успешного парсинга автоматически переключаемся на вкладку "Все" и обновляем таблицу
                 showOnlySaved = false;
-                await LoadFromDb();
+                LoadFromDb();
             }
             else
             {
@@ -269,24 +287,33 @@ else if (hasLoaded)
             StateHasChanged();
         }
     }
-
     private int ParseExperienceToMonths(string exp)
     {
+        // Если опыт не указан, отправляем его в самый низ списка (возвращаем -1)
         if (string.IsNullOrWhiteSpace(exp) || exp.ToLower().Contains("not specified")) 
             return -1;
 
         var lowerExp = exp.ToLower();
+        
+        // Ищем первое число в строке с помощью регулярного выражения
         var match = System.Text.RegularExpressions.Regex.Match(lowerExp, @"\d+");
         if (!match.Success) return -1;
 
         int number = int.Parse(match.Value);
 
-        if (lowerExp.Contains("мес")) return number;
-        if (lowerExp.Contains("год") || lowerExp.Contains("лет") || lowerExp.Contains("года")) return number * 12;
+        // Если в строке есть "мес", значит это месяцы
+        if (lowerExp.Contains("мес"))
+        {
+            return number;
+        }
+        // Если есть "год" или "лет", умножаем на 12
+        if (lowerExp.Contains("год") || lowerExp.Contains("лет") || lowerExp.Contains("года"))
+        {
+            return number * 12;
+        }
 
         return number;
     }
-
     public class PythonApiResponse
     {
         public string status { get; set; } = "";
