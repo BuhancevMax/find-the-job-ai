@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from abc import ABC, abstractmethod
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -16,133 +17,197 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/parse/djinni")
-def parse_djinni(api_key: str, keyword: str = "C#", target_role: str = "C# Developer", target_exp: str = "Без опыта"):
-    print(f"\n🚀 [START] Парсинг '{keyword}' для профиля: {target_role} ({target_exp})")
+# ==========================================
+# 1. АРХИТЕКТУРА ПАРСЕРОВ (Паттерн Стратегия)
+# ==========================================
 
-    if not api_key:
-        return {"status": "error", "message": "API ключ не предоставлен"}
+class BaseScraper(ABC):
+    """Абстрактный класс (Интерфейс) для всех будущих парсеров"""
+    @abstractmethod
+    def fetch_jobs(self, keyword: str) -> list[dict]:
+        pass
 
-    url = f"https://djinni.co/jobs/?primary_keyword={keyword}"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+class DjinniScraper(BaseScraper):
+    """Реализация парсера только для Djinni"""
+
+    # Словарь маппинга фильтров. Легко расширяется в одну строку без if/elif!
+    CATEGORY_MAP = {
+        "c#": "dotnet", ".net": "dotnet", "dotnet": "dotnet",
+        "python": "python", "py": "python",
+        "java": "java",
+        "qa": "qa", "тестировщик": "qa"
     }
 
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        return {"status": "error", "message": f"Сайт заблокировал запрос. Код: {response.status_code}"}
+    def fetch_jobs(self, keyword: str) -> list[dict]:
+        clean_key = keyword.lower().strip()
 
-    soup = BeautifulSoup(response.text, 'html.parser')
+        # Если слово есть в словаре - берем системный ключ Джинни. Если нет - берем текстовый поиск.
+        params = {"primary_keyword": self.CATEGORY_MAP[clean_key]} if clean_key in self.CATEGORY_MAP else {"all-keywords": keyword}
 
-    jobs_data = []
-    script_tags = soup.find_all('script', type='application/ld+json')
-    for tag in script_tags:
-        try:
-            data = json.loads(tag.string)
-            if isinstance(data, list):
-                jobs_data.extend([item for item in data if item.get('@type') == 'JobPosting'])
-            elif isinstance(data, dict) and data.get('@type') == 'JobPosting':
-                jobs_data.append(data)
-        except Exception as e:
-            continue
+        url = "https://djinni.co/jobs/"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
-    print(f"📦 [INFO] Найдено {len(jobs_data)} полных описаний вакансий.")
+        response = requests.get(url, headers=headers, params=params)
+        print(f"🔗 [Парсер Djinni] URL запроса: {response.url}")
 
-    if len(jobs_data) == 0:
-        return {"status": "error", "message": "Не удалось найти вакансии."}
+        if response.status_code != 200:
+            raise Exception(f"Djinni заблокировал запрос. Код: {response.status_code}")
 
-    client = Groq(api_key=api_key)
-    vacancies = []
-    batch_size = 5 # Обрабатываем по 5 штук за раз
+        soup = BeautifulSoup(response.text, 'html.parser')
+        jobs_data = []
 
-    # Запускаем цикл по ВСЕМ найденным вакансиям с шагом 5
-    for i in range(0, len(jobs_data), batch_size):
-        batch = jobs_data[i:i+batch_size]
-        batch_vacancies = []
+        for tag in soup.find_all('script', type='application/ld+json'):
+            try:
+                data = json.loads(tag.string)
+                if isinstance(data, list):
+                    jobs_data.extend([item for item in data if item.get('@type') == 'JobPosting'])
+                elif isinstance(data, dict) and data.get('@type') == 'JobPosting':
+                    jobs_data.append(data)
+            except:
+                continue
 
-        # --- ОБНОВЛЕННЫЙ УМНЫЙ ПРОМПТ ---
-        prompt = f"""
-        Ты IT HR-аналитик. Оценивай вакансии ПЕРСОНАЛЬНО для кандидата.
-        ПРОФИЛЬ: Ищет: {target_role}, Текущий опыт: {target_exp}
-        
-        Верни СТРОГО JSON с ключом "results". Для каждой вакансии:
-        - "temp_id": (число)
-        - "TechStack": (строка, список основных технологий)
-        - "AiSummary": (строка, суть работы в 1 коротком предложении СТРОГО НА РУССКОМ ЯЗЫКЕ)
-        - "AiMatchScore": (целое число 0-100. Если вакансия не связана с ИТ-разработкой или требуется уровень Senior, а кандидат Junior - ставь 0).
-        
-        Список вакансий:
-        """
+        return self._normalize_data(jobs_data)
 
-        for idx, job in enumerate(batch):
-            company_name = job.get("hiringOrganization", {}).get("name", "Неизвестно")
-            desc_snippet = job.get("description", "")[:1200].replace('\n', ' ')
-
-            # --- ПРЯМОЙ ПАРСИНГ ОПЫТА БЕЗ ИИ ---
+    def _normalize_data(self, raw_data: list) -> list[dict]:
+        """Приводит сырые данные Джинни к единому стандарту для ИИ"""
+        normalized = []
+        for idx, job in enumerate(raw_data):
             exp_data = job.get("experienceRequirements", {})
-            months = 0
-            if isinstance(exp_data, dict):
-                months = exp_data.get("monthsOfExperience", 0)
+            months = exp_data.get("monthsOfExperience", 0) if isinstance(exp_data, dict) else 0
 
-            if months == 0:
-                req_exp = "Без опыта"
-            elif months < 12:
-                req_exp = f"{int(months)} месяцев"
-            elif months % 12 == 0:
-                y = int(months // 12)
-                req_exp = f"{y} год" if y == 1 else f"{y} года" if 1 < y < 5 else f"{y} лет"
-            else:
-                req_exp = f"{int(months)} месяцев"
-            # -----------------------------------
+            if months == 0: req_exp = "Без опыта"
+            elif months < 12: req_exp = f"{int(months)} месяцев"
+            elif months % 12 == 0: req_exp = f"{int(months // 12)} лет/год(а)"
+            else: req_exp = f"{int(months)} месяцев"
 
-            vac_dict = {
+            normalized.append({
                 "_temp_id": idx,
                 "Title": job.get("title", "Без названия"),
-                "Company": company_name,
+                "Company": job.get("hiringOrganization", {}).get("name", "Неизвестно"),
                 "Url": job.get("url", ""),
-                "RequiredExperience": req_exp, # Сразу вставляем готовый опыт
-                "TechStack": "",
-                "AiSummary": "",
-                "AiMatchScore": 0
-            }
-            batch_vacancies.append(vac_dict)
-            prompt += f"\ntemp_id: {idx}\nНазвание: {vac_dict['Title']}\nОписание: {desc_snippet}\n"
+                "RequiredExperience": req_exp,
+                "DescriptionSnippet": job.get("description", "")[:1200].replace('\n', ' ')
+            })
+        return normalized
 
-        print(f"🧠 [Батч {i//batch_size + 1}] Отправляем {len(batch)} вакансий в ИИ...")
+# В будущем ты просто создашь новый класс:
+# class WorkUaScraper(BaseScraper): 
+#     def fetch_jobs(self, keyword: str): ...
 
-        try:
-            start_time = time.time()
-            chat_completion = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model="openai/gpt-oss-20b", # Если менял модель, оставь свое название
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
-            elapsed = round(time.time() - start_time, 2)
-            print(f"✨ Успех за {elapsed} сек.")
+class ScraperFactory:
+    """Паттерн Фабрика: решает, какой парсер использовать"""
+    @staticmethod
+    def get_scraper(platform: str) -> BaseScraper:
+        scrapers = {
+            "djinni": DjinniScraper(),
+            # "workua": WorkUaScraper(), # <-- В будущем просто раскомментируешь это!
+        }
+        platform_key = platform.lower()
+        if platform_key not in scrapers:
+            raise ValueError(f"Платформа '{platform}' пока не поддерживается нашей системой.")
+        return scrapers[platform_key]
 
-            response_content = chat_completion.choices[0].message.content
-            ai_data = json.loads(response_content)
+# ==========================================
+# 2. УНИВЕРСАЛЬНЫЙ АНАЛИЗАТОР ИИ
+# ==========================================
 
-            # Связываем данные по надежному _temp_id
-            for ai_info in ai_data.get("results", []):
-                matched_vac = next((v for v in batch_vacancies if v["_temp_id"] == ai_info.get("temp_id")), None)
-                if matched_vac:
-                    matched_vac["TechStack"] = str(ai_info.get("TechStack", ""))
-                    matched_vac["AiSummary"] = str(ai_info.get("AiSummary", ""))
-                    score = ai_info.get("AiMatchScore", 0)
-                    matched_vac["AiMatchScore"] = int(score) if str(score).isdigit() else 0
+class AiEvaluator:
+    """Этот класс принимает стандартизированные данные с ЛЮБОГО сайта и оценивает их"""
+    def __init__(self, api_key: str):
+        self.client = Groq(api_key=api_key)
 
-        except Exception as e:
-            print(f"❌ Ошибка ИИ в батче: {e}")
+    def evaluate_vacancies(self, vacancies: list[dict], target_role: str, target_exp: str) -> list[dict]:
+        if not vacancies:
+            return []
 
-        # Добавляем готовый батч в общий список, удаляя временный ID
-        for v in batch_vacancies:
-            del v["_temp_id"]
-            vacancies.append(v)
+        evaluated_vacancies = []
+        batch_size = 5
 
-        # Небольшая пауза между батчами, чтобы не разозлить защиту Groq (Rate Limits)
-        time.sleep(1.5)
+        for i in range(0, len(vacancies), batch_size):
+            batch = vacancies[i:i+batch_size]
 
-    print(f"🏁 [FINISH] Успешно собрано {len(vacancies)} вакансий!")
-    return {"status": "success", "count": len(vacancies), "data": vacancies}
+            prompt = f"""
+            Ты строгий IT HR-аналитик. Оцени релевантность вакансий для кандидата.
+            ПРОФИЛЬ КАНДИДАТА: Должность: {target_role}, Опыт: {target_exp}
+            
+            ИНСТРУКЦИЯ (AiMatchScore 0-100):
+            1. Стек совершенно не совпадает = 0-20.
+            2. Вакансия Middle/Senior, а кандидат Junior/Trainee (Без опыта) = 0-30.
+            3. Идеальное совпадение стека и уровня = 80-100.
+            
+            Верни JSON: {{ "results": [ {{"temp_id": <id>, "TechStack": "<стек>", "AiSummary": "<суть в 1 предложении на русском>", "AiMatchScore": <0-100>}} ] }}
+            
+            ВАКАНСИИ:
+            """
+            for vac in batch:
+                prompt += f"\ntemp_id: {vac['_temp_id']}\nНазвание: {vac['Title']}\nТребуемый опыт: {vac['RequiredExperience']}\nОписание: {vac['DescriptionSnippet']}\n"
+
+            print(f"🧠 [ИИ] Анализируем батч {i//batch_size + 1}...")
+
+            try:
+                response = self.client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="openai/gpt-oss-20b",
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+
+                ai_results = json.loads(response.choices[0].message.content).get("results", [])
+
+                for ai_info in ai_results:
+                    matched = next((v for v in batch if v["_temp_id"] == ai_info.get("temp_id")), None)
+                    if matched:
+                        matched["TechStack"] = str(ai_info.get("TechStack", ""))
+                        matched["AiSummary"] = str(ai_info.get("AiSummary", ""))
+                        matched["AiMatchScore"] = int(ai_info.get("AiMatchScore", 0))
+
+            except Exception as e:
+                print(f"❌ Ошибка ИИ: {e}")
+
+            # Очищаем системные поля перед отправкой на фронт
+            for v in batch:
+                if "_temp_id" in v: del v["_temp_id"]
+                if "DescriptionSnippet" in v: del v["DescriptionSnippet"]
+                # Заполняем дефолтными значениями, если ИИ упал
+                if "TechStack" not in v:
+                    v["TechStack"] = "Ошибка анализа"
+                    v["AiSummary"] = "Не удалось проанализировать"
+                    v["AiMatchScore"] = 0
+                evaluated_vacancies.append(v)
+
+            time.sleep(1.5)
+
+        return evaluated_vacancies
+
+# ==========================================
+# 3. ЕДИНАЯ ТОЧКА ВХОДА (Универсальный Endpoint)
+# ==========================================
+
+# Обрати внимание: теперь URL динамический /parse/{platform}
+@app.get("/parse/{platform}")
+def parse_jobs(platform: str, api_key: str, keyword: str, target_role: str, target_exp: str):
+    print(f"\n🚀 [START] Сбор для платформы: {platform.upper()} | Запрос: '{keyword}'")
+
+    try:
+        # 1. Запрашиваем парсер для указанного сайта у Фабрики
+        scraper = ScraperFactory.get_scraper(platform)
+
+        # 2. Собираем сырые данные
+        raw_vacancies = scraper.fetch_jobs(keyword)
+        print(f"📦 [INFO] Найдено {len(raw_vacancies)} вакансий.")
+
+        if not raw_vacancies:
+            return {"status": "error", "message": f"По запросу '{keyword}' на {platform} ничего не найдено."}
+
+        # 3. Отдаем сырые данные ИИ-анализатору
+        evaluator = AiEvaluator(api_key=api_key)
+        final_vacancies = evaluator.evaluate_vacancies(raw_vacancies, target_role, target_exp)
+
+        print(f"🏁 [FINISH] Готово к отправке: {len(final_vacancies)}")
+        return {"status": "success", "count": len(final_vacancies), "data": final_vacancies}
+
+    except ValueError as ve:
+        # Срабатывает, если передали неизвестную платформу
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
