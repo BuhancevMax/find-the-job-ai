@@ -20,20 +20,42 @@
             <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="Ключ Groq (gsk_...)" />
         </div>
         
-        <!-- НОВЫЕ ФИЛЬТРЫ -->
+       <!-- ФИЛЬТРЫ -->
         <div class="row">
-            <!-- 1. Ключевое слово для поиска на Djinni -->
-            <div class="col-md-4 mb-2">
+            <!-- Платформа -->
+            <div class="col-md-2 mb-2">
                 <div class="input-group">
-                    <span class="input-group-text">🔍 Поиск (Стек)</span>
-                    <input type="text" class="form-control" @bind="searchKeyword" placeholder="C#, Java, Python, QA..." />
+                    <span class="input-group-text">🌐 Сайт</span>
+                    <select class="form-select" @bind="targetPlatform">
+                        <option value="djinni">Djinni.co</option>
+                        <option value="workua">Work.ua</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Язык ИИ -->
+            <div class="col-md-2 mb-2">
+                <div class="input-group">
+                    <span class="input-group-text">🌍 Язык</span>
+                    <select class="form-select" @bind="targetLanguage">
+                        <option value="Українська">UA</option>
+                        <option value="English">EN</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Ключевое слово -->
+            <div class="col-md-3 mb-2">
+                <div class="input-group">
+                    <span class="input-group-text">🔍 Стек</span>
+                    <input type="text" class="form-control" @bind="searchKeyword" placeholder="C#, Python..." />
                 </div>
             </div>
             
-            <!-- 2. Желаемая должность -->
-            <div class="col-md-4 mb-2">
+            <!-- Должность -->
+            <div class="col-md-3 mb-2">
                 <div class="input-group">
-                    <span class="input-group-text">💼 Должность</span>
+                    <span class="input-group-text">💼 Роль</span>
                     <select class="form-select" @bind="targetRole">
                         <option value="Trainee/Junior Software Engineer (.NET)">Trainee/Junior .NET</option>
                         <option value="Middle Software Engineer (.NET)">Middle .NET</option>
@@ -43,8 +65,8 @@
                 </div>
             </div>
 
-            <!-- 3. Опыт -->
-            <div class="col-md-4 mb-2">
+            <!-- Опыт -->
+            <div class="col-md-2 mb-2">
                 <div class="input-group">
                     <span class="input-group-text">⏳ Опыт</span>
                     <select class="form-select" @bind="targetExp">
@@ -144,6 +166,8 @@ else if (hasLoaded)
 }
 
 @code {
+    private string targetLanguage = "Українська";
+    private string targetPlatform = "djinni";
     private string searchKeyword = ""; // Значение по умолчанию
     private string apiKey = "";
     private string targetRole = "";
@@ -181,6 +205,10 @@ else if (hasLoaded)
             var expResult = await BrowserStorage.GetAsync<string>("savedExp");
             if (expResult.Success && !string.IsNullOrEmpty(expResult.Value)) 
                 targetExp = expResult.Value;
+            
+            var langResult = await BrowserStorage.GetAsync<string>("savedLanguage");
+            if (langResult.Success && !string.IsNullOrEmpty(langResult.Value)) 
+                targetLanguage = langResult.Value;
 
             // Говорим Блазору: "Мы обновили переменные, перерисуй интерфейс"
             StateHasChanged();
@@ -280,6 +308,7 @@ else if (hasLoaded)
 
         try
         {
+            await BrowserStorage.SetAsync("savedLanguage", targetLanguage);
             await BrowserStorage.SetAsync("savedKeyword", searchKeyword);
             await BrowserStorage.SetAsync("savedApiKey", apiKey);
             await BrowserStorage.SetAsync("savedRole", targetRole);
@@ -288,7 +317,8 @@ else if (hasLoaded)
             string role = Uri.EscapeDataString(targetRole);
             string exp = Uri.EscapeDataString(targetExp);
             string key = Uri.EscapeDataString(apiKey);
-            string requestUrl = $"http://127.0.0.1:8000/parse/djinni?keyword={keyword}&api_key={key}&target_role={role}&target_exp={exp}";
+            string lang = Uri.EscapeDataString(targetLanguage);
+            string requestUrl = $"http://127.0.0.1:8000/parse/{targetPlatform}?keyword={keyword}&api_key={key}&target_role={role}&target_exp={exp}&language={lang}";
             
             var response = await Http.GetFromJsonAsync<PythonApiResponse>(requestUrl);
             
