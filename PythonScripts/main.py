@@ -90,6 +90,59 @@ class DjinniScraper(BaseScraper):
             })
         return normalized
 
+class WorkUaScraper(BaseScraper):
+    """Реализация парсера для Work.ua"""
+    def fetch_jobs(self, keyword: str) -> list[dict]:
+        url = "https://www.work.ua/jobs/"
+        params = {"search": keyword}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Language': 'uk-UA,uk;q=0.9,ru;q=0.8' # Work.ua чувствителен к языку
+        }
+
+        response = requests.get(url, headers=headers, params=params)
+        print(f"🔗 [Парсер Work.ua] URL запроса: {response.url}")
+
+        if response.status_code != 200:
+            raise Exception(f"Work.ua заблокировал запрос. Код: {response.status_code}")
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        jobs_data = []
+
+        # Work.ua хранит карточки вакансий в div с классом card-hover
+        cards = soup.find_all('div', class_=lambda c: c and 'card-hover' in c)
+
+        for idx, card in enumerate(cards):
+            try:
+                title_tag = card.find('h2').find('a')
+                if not title_tag:
+                    continue
+
+                title = title_tag.text.strip()
+                link = "https://www.work.ua" + title_tag['href']
+
+                # Достаем описание (обычно в теге p)
+                desc_tag = card.find('p')
+                desc = desc_tag.text.strip().replace('\n', ' ') if desc_tag else ""
+
+                # Ищем название компании
+                company = "Неизвестно"
+                company_span = card.find('span', class_='strong-600') or card.find('b')
+                if company_span:
+                    company = company_span.text.strip()
+
+                jobs_data.append({
+                    "_temp_id": idx,
+                    "Title": title,
+                    "Company": company,
+                    "Url": link,
+                    "RequiredExperience": "Смотреть в описании", # На карточках Work.ua часто нет опыта, ИИ поймет из текста
+                    "DescriptionSnippet": desc[:1200]
+                })
+            except Exception as e:
+                continue
+
+        return jobs_data
 # В будущем ты просто создашь новый класс:
 # class WorkUaScraper(BaseScraper): 
 #     def fetch_jobs(self, keyword: str): ...
@@ -100,7 +153,7 @@ class ScraperFactory:
     def get_scraper(platform: str) -> BaseScraper:
         scrapers = {
             "djinni": DjinniScraper(),
-            # "workua": WorkUaScraper(), # <-- В будущем просто раскомментируешь это!
+            "workua": WorkUaScraper(), 
         }
         platform_key = platform.lower()
         if platform_key not in scrapers:
@@ -116,7 +169,7 @@ class AiEvaluator:
     def __init__(self, api_key: str):
         self.client = Groq(api_key=api_key)
 
-    def evaluate_vacancies(self, vacancies: list[dict], target_role: str, target_exp: str) -> list[dict]:
+    def evaluate_vacancies(self, vacancies: list[dict], target_role: str, target_exp: str, language: str) -> list[dict]:
         if not vacancies:
             return []
 
@@ -135,7 +188,9 @@ class AiEvaluator:
             2. Вакансия Middle/Senior, а кандидат Junior/Trainee (Без опыта) = 0-30.
             3. Идеальное совпадение стека и уровня = 80-100.
             
-            Верни JSON: {{ "results": [ {{"temp_id": <id>, "TechStack": "<стек>", "AiSummary": "<суть в 1 предложении на русском>", "AiMatchScore": <0-100>}} ] }}
+            ВАЖНО: Все текстовые поля (AiSummary и ExtractedExperience) должны быть написаны СТРОГО НА ЯЗЫКЕ: {language.upper()}!
+            
+            Верни JSON: {{ "results": [ {{"temp_id": <id>, "TechStack": "<стек>", "AiSummary": "<суть в 1 предложении на {language}>", "AiMatchScore": <0-100>, "ExtractedExperience": "<Требуемый опыт кратко на {language}>"}} ] }}
             
             ВАКАНСИИ:
             """
@@ -143,7 +198,7 @@ class AiEvaluator:
                 prompt += f"\ntemp_id: {vac['_temp_id']}\nНазвание: {vac['Title']}\nТребуемый опыт: {vac['RequiredExperience']}\nОписание: {vac['DescriptionSnippet']}\n"
 
             print(f"🧠 [ИИ] Анализируем батч {i//batch_size + 1}...")
-
+            # ... (остальной код try-except остается без изменений)
             try:
                 response = self.client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
@@ -161,14 +216,16 @@ class AiEvaluator:
                         matched["AiSummary"] = str(ai_info.get("AiSummary", ""))
                         matched["AiMatchScore"] = int(ai_info.get("AiMatchScore", 0))
 
+                        extracted_exp = str(ai_info.get("ExtractedExperience", "")).strip()
+                        if matched.get("RequiredExperience") == "Смотреть в описании" and extracted_exp:
+                            matched["RequiredExperience"] = extracted_exp
+
             except Exception as e:
                 print(f"❌ Ошибка ИИ: {e}")
 
-            # Очищаем системные поля перед отправкой на фронт
             for v in batch:
                 if "_temp_id" in v: del v["_temp_id"]
                 if "DescriptionSnippet" in v: del v["DescriptionSnippet"]
-                # Заполняем дефолтными значениями, если ИИ упал
                 if "TechStack" not in v:
                     v["TechStack"] = "Ошибка анализа"
                     v["AiSummary"] = "Не удалось проанализировать"
@@ -184,30 +241,30 @@ class AiEvaluator:
 # ==========================================
 
 # Обрати внимание: теперь URL динамический /parse/{platform}
+# ==========================================
+# 3. ЕДИНАЯ ТОЧКА ВХОДА (Универсальный Endpoint)
+# ==========================================
+
 @app.get("/parse/{platform}")
-def parse_jobs(platform: str, api_key: str, keyword: str, target_role: str, target_exp: str):
-    print(f"\n🚀 [START] Сбор для платформы: {platform.upper()} | Запрос: '{keyword}'")
+def parse_jobs(platform: str, api_key: str, keyword: str, target_role: str, target_exp: str, language: str):
+    print(f"\n🚀 [START] Сбор для платформы: {platform.upper()} | Запрос: '{keyword}' | Язык: {language}")
 
     try:
-        # 1. Запрашиваем парсер для указанного сайта у Фабрики
         scraper = ScraperFactory.get_scraper(platform)
-
-        # 2. Собираем сырые данные
         raw_vacancies = scraper.fetch_jobs(keyword)
         print(f"📦 [INFO] Найдено {len(raw_vacancies)} вакансий.")
 
         if not raw_vacancies:
             return {"status": "error", "message": f"По запросу '{keyword}' на {platform} ничего не найдено."}
 
-        # 3. Отдаем сырые данные ИИ-анализатору
         evaluator = AiEvaluator(api_key=api_key)
-        final_vacancies = evaluator.evaluate_vacancies(raw_vacancies, target_role, target_exp)
+        # ВАЖНО: передаем language в анализатор
+        final_vacancies = evaluator.evaluate_vacancies(raw_vacancies, target_role, target_exp, language)
 
         print(f"🏁 [FINISH] Готово к отправке: {len(final_vacancies)}")
         return {"status": "success", "count": len(final_vacancies), "data": final_vacancies}
 
     except ValueError as ve:
-        # Срабатывает, если передали неизвестную платформу
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         return {"status": "error", "message": str(e)}
