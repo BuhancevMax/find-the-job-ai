@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @rendermode InteractiveServer
 @inject HttpClient Http
 @inject VacancyService VacancyService
@@ -17,7 +17,7 @@
         <h5 class="card-title">Настройки ИИ</h5>
         <div class="input-group mb-3">
             <span class="input-group-text">🔑 API Key</span>
-            <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="Ключ Groq (gsk_...)" />
+            <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="API Key (Groq: gsk_... или OpenRouter: sk-or-...)" />
         </div>
         
        <!-- ФИЛЬТРЫ -->
