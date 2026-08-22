@@ -1,13 +1,30 @@
+import asyncio
+import json
+import sys
+import time
+
+# Ensure UTF-8 output on Windows consoles
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from abc import ABC, abstractmethod
-import requests
-from bs4 import BeautifulSoup
-import json
-import time
-from groq import Groq
+from fastapi.responses import StreamingResponse
 
-app = FastAPI()
+from App.AI.evaluator import AiEvaluator, BATCH_SIZE, safe_log
+from App.AI.prompt_loader import load_prompt
+from App.Scrapers import ScraperFactory
+
+
+app = FastAPI(
+    title="Job Search AI Backend",
+    version="1.0.0",
+    description="Job aggregation and AI matching backend.",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,254 +34,249 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==========================================
-# 1. АРХИТЕКТУРА ПАРСЕРОВ (Паттерн Стратегия)
-# ==========================================
 
-class BaseScraper(ABC):
-    """Абстрактный класс (Интерфейс) для всех будущих парсеров"""
-    @abstractmethod
-    def fetch_jobs(self, keyword: str) -> list[dict]:
-        pass
+@app.get("/health")
+def health_check() -> dict:
+    return {"status": "ok"}
 
-class DjinniScraper(BaseScraper):
-    """Реализация парсера только для Djinni"""
-
-    # Словарь маппинга фильтров. Легко расширяется в одну строку без if/elif!
-    CATEGORY_MAP = {
-        "c#": "dotnet", ".net": "dotnet", "dotnet": "dotnet",
-        "python": "python", "py": "python",
-        "java": "java",
-        "qa": "qa", "тестировщик": "qa"
-    }
-
-    def fetch_jobs(self, keyword: str) -> list[dict]:
-        clean_key = keyword.lower().strip()
-
-        # Если слово есть в словаре - берем системный ключ Джинни. Если нет - берем текстовый поиск.
-        params = {"primary_keyword": self.CATEGORY_MAP[clean_key]} if clean_key in self.CATEGORY_MAP else {"all-keywords": keyword}
-
-        url = "https://djinni.co/jobs/"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-
-        response = requests.get(url, headers=headers, params=params)
-        print(f"🔗 [Парсер Djinni] URL запроса: {response.url}")
-
-        if response.status_code != 200:
-            raise Exception(f"Djinni заблокировал запрос. Код: {response.status_code}")
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-        jobs_data = []
-
-        for tag in soup.find_all('script', type='application/ld+json'):
-            try:
-                data = json.loads(tag.string)
-                if isinstance(data, list):
-                    jobs_data.extend([item for item in data if item.get('@type') == 'JobPosting'])
-                elif isinstance(data, dict) and data.get('@type') == 'JobPosting':
-                    jobs_data.append(data)
-            except:
-                continue
-
-        return self._normalize_data(jobs_data)
-
-    def _normalize_data(self, raw_data: list) -> list[dict]:
-        """Приводит сырые данные Джинни к единому стандарту для ИИ"""
-        normalized = []
-        for idx, job in enumerate(raw_data):
-            exp_data = job.get("experienceRequirements", {})
-            months = exp_data.get("monthsOfExperience", 0) if isinstance(exp_data, dict) else 0
-
-            if months == 0: req_exp = "Без опыта"
-            elif months < 12: req_exp = f"{int(months)} месяцев"
-            elif months % 12 == 0: req_exp = f"{int(months // 12)} лет/год(а)"
-            else: req_exp = f"{int(months)} месяцев"
-
-            normalized.append({
-                "_temp_id": idx,
-                "Title": job.get("title", "Без названия"),
-                "Company": job.get("hiringOrganization", {}).get("name", "Неизвестно"),
-                "Url": job.get("url", ""),
-                "RequiredExperience": req_exp,
-                "DescriptionSnippet": job.get("description", "")[:1200].replace('\n', ' ')
-            })
-        return normalized
-
-class WorkUaScraper(BaseScraper):
-    """Реализация парсера для Work.ua"""
-    def fetch_jobs(self, keyword: str) -> list[dict]:
-        url = "https://www.work.ua/jobs/"
-        params = {"search": keyword}
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept-Language': 'uk-UA,uk;q=0.9,ru;q=0.8' # Work.ua чувствителен к языку
-        }
-
-        response = requests.get(url, headers=headers, params=params)
-        print(f"🔗 [Парсер Work.ua] URL запроса: {response.url}")
-
-        if response.status_code != 200:
-            raise Exception(f"Work.ua заблокировал запрос. Код: {response.status_code}")
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-        jobs_data = []
-
-        # Work.ua хранит карточки вакансий в div с классом card-hover
-        cards = soup.find_all('div', class_=lambda c: c and 'card-hover' in c)
-
-        for idx, card in enumerate(cards):
-            try:
-                title_tag = card.find('h2').find('a')
-                if not title_tag:
-                    continue
-
-                title = title_tag.text.strip()
-                link = "https://www.work.ua" + title_tag['href']
-
-                # Достаем описание (обычно в теге p)
-                desc_tag = card.find('p')
-                desc = desc_tag.text.strip().replace('\n', ' ') if desc_tag else ""
-
-                # Ищем название компании
-                company = "Неизвестно"
-                company_span = card.find('span', class_='strong-600') or card.find('b')
-                if company_span:
-                    company = company_span.text.strip()
-
-                jobs_data.append({
-                    "_temp_id": idx,
-                    "Title": title,
-                    "Company": company,
-                    "Url": link,
-                    "RequiredExperience": "Смотреть в описании", # На карточках Work.ua часто нет опыта, ИИ поймет из текста
-                    "DescriptionSnippet": desc[:1200]
-                })
-            except Exception as e:
-                continue
-
-        return jobs_data
-# В будущем ты просто создашь новый класс:
-# class WorkUaScraper(BaseScraper): 
-#     def fetch_jobs(self, keyword: str): ...
-
-class ScraperFactory:
-    """Паттерн Фабрика: решает, какой парсер использовать"""
-    @staticmethod
-    def get_scraper(platform: str) -> BaseScraper:
-        scrapers = {
-            "djinni": DjinniScraper(),
-            "workua": WorkUaScraper(), 
-        }
-        platform_key = platform.lower()
-        if platform_key not in scrapers:
-            raise ValueError(f"Платформа '{platform}' пока не поддерживается нашей системой.")
-        return scrapers[platform_key]
-
-# ==========================================
-# 2. УНИВЕРСАЛЬНЫЙ АНАЛИЗАТОР ИИ
-# ==========================================
-
-class AiEvaluator:
-    """Этот класс принимает стандартизированные данные с ЛЮБОГО сайта и оценивает их"""
-    def __init__(self, api_key: str):
-        self.client = Groq(api_key=api_key)
-
-    def evaluate_vacancies(self, vacancies: list[dict], target_role: str, target_exp: str, language: str) -> list[dict]:
-        if not vacancies:
-            return []
-
-        evaluated_vacancies = []
-        batch_size = 5
-
-        for i in range(0, len(vacancies), batch_size):
-            batch = vacancies[i:i+batch_size]
-
-            prompt = f"""
-            Ты строгий IT HR-аналитик. Оцени релевантность вакансий для кандидата.
-            ПРОФИЛЬ КАНДИДАТА: Должность: {target_role}, Опыт: {target_exp}
-            
-            ИНСТРУКЦИЯ (AiMatchScore 0-100):
-            1. Стек совершенно не совпадает = 0-20.
-            2. Вакансия Middle/Senior, а кандидат Junior/Trainee (Без опыта) = 0-30.
-            3. Идеальное совпадение стека и уровня = 80-100.
-            
-            ВАЖНО: Все текстовые поля (AiSummary и ExtractedExperience) должны быть написаны СТРОГО НА ЯЗЫКЕ: {language.upper()}!
-            
-            Верни JSON: {{ "results": [ {{"temp_id": <id>, "TechStack": "<стек>", "AiSummary": "<суть в 1 предложении на {language}>", "AiMatchScore": <0-100>, "ExtractedExperience": "<Требуемый опыт кратко на {language}>"}} ] }}
-            
-            ВАКАНСИИ:
-            """
-            for vac in batch:
-                prompt += f"\ntemp_id: {vac['_temp_id']}\nНазвание: {vac['Title']}\nТребуемый опыт: {vac['RequiredExperience']}\nОписание: {vac['DescriptionSnippet']}\n"
-
-            print(f"🧠 [ИИ] Анализируем батч {i//batch_size + 1}...")
-            # ... (остальной код try-except остается без изменений)
-            try:
-                response = self.client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="openai/gpt-oss-20b",
-                    response_format={"type": "json_object"},
-                    temperature=0.1
-                )
-
-                ai_results = json.loads(response.choices[0].message.content).get("results", [])
-
-                for ai_info in ai_results:
-                    matched = next((v for v in batch if v["_temp_id"] == ai_info.get("temp_id")), None)
-                    if matched:
-                        matched["TechStack"] = str(ai_info.get("TechStack", ""))
-                        matched["AiSummary"] = str(ai_info.get("AiSummary", ""))
-                        matched["AiMatchScore"] = int(ai_info.get("AiMatchScore", 0))
-
-                        extracted_exp = str(ai_info.get("ExtractedExperience", "")).strip()
-                        if matched.get("RequiredExperience") == "Смотреть в описании" and extracted_exp:
-                            matched["RequiredExperience"] = extracted_exp
-
-            except Exception as e:
-                print(f"❌ Ошибка ИИ: {e}")
-
-            for v in batch:
-                if "_temp_id" in v: del v["_temp_id"]
-                if "DescriptionSnippet" in v: del v["DescriptionSnippet"]
-                if "TechStack" not in v:
-                    v["TechStack"] = "Ошибка анализа"
-                    v["AiSummary"] = "Не удалось проанализировать"
-                    v["AiMatchScore"] = 0
-                evaluated_vacancies.append(v)
-
-            time.sleep(1.5)
-
-        return evaluated_vacancies
-
-# ==========================================
-# 3. ЕДИНАЯ ТОЧКА ВХОДА (Универсальный Endpoint)
-# ==========================================
-
-# Обрати внимание: теперь URL динамический /parse/{platform}
-# ==========================================
-# 3. ЕДИНАЯ ТОЧКА ВХОДА (Универсальный Endpoint)
-# ==========================================
 
 @app.get("/parse/{platform}")
-def parse_jobs(platform: str, api_key: str, keyword: str, target_role: str, target_exp: str, language: str):
-    print(f"\n🚀 [START] Сбор для платформы: {platform.upper()} | Запрос: '{keyword}' | Язык: {language}")
+def parse_jobs(
+    platform: str,
+    api_key: str,
+    keyword: str,
+    target_role: str,
+    target_exp: str,
+    language: str,
+):
+    """
+    Fetch vacancies from a supported platform and evaluate them with AI (standard non-streaming).
+    """
+
+    safe_log(
+        f"\n[START] Платформа: {platform.upper()} | "
+        f"Запрос: '{keyword}' | Язык: {language}"
+    )
 
     try:
         scraper = ScraperFactory.get_scraper(platform)
         raw_vacancies = scraper.fetch_jobs(keyword)
-        print(f"📦 [INFO] Найдено {len(raw_vacancies)} вакансий.")
+
+        safe_log(f"[INFO] Найдено вакансий: {len(raw_vacancies)}")
 
         if not raw_vacancies:
-            return {"status": "error", "message": f"По запросу '{keyword}' на {platform} ничего не найдено."}
+            return {
+                "status": "success",
+                "count": 0,
+                "data": [],
+                "message": (
+                    f"По запросу '{keyword}' на {platform} "
+                    "ничего не найдено."
+                ),
+            }
 
         evaluator = AiEvaluator(api_key=api_key)
-        # ВАЖНО: передаем language в анализатор
-        final_vacancies = evaluator.evaluate_vacancies(raw_vacancies, target_role, target_exp, language)
 
-        print(f"🏁 [FINISH] Готово к отправке: {len(final_vacancies)}")
-        return {"status": "success", "count": len(final_vacancies), "data": final_vacancies}
+        final_vacancies = evaluator.evaluate_vacancies(
+            raw_vacancies,
+            target_role=target_role,
+            target_exp=target_exp,
+            target_stack=keyword,
+            language=language,
+        )
 
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+        safe_log(
+            f"[FINISH] Готово к отправке: "
+            f"{len(final_vacancies)}"
+        )
+
+        return {
+            "status": "success",
+            "count": len(final_vacancies),
+            "data": final_vacancies,
+        }
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    except Exception as exc:
+        safe_log(f"[SERVER ERROR] {exc}")
+        return {
+            "status": "error",
+            "message": str(exc),
+        }
+
+
+@app.get("/parse-stream/{platform}")
+async def parse_jobs_stream(
+    platform: str,
+    api_key: str,
+    keyword: str,
+    target_role: str,
+    target_exp: str,
+    language: str,
+):
+
+    # Shared event queue between the sync AI thread and this async generator
+    event_queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_event_loop()
+
+    def push_event(event: dict):
+        """Thread-safe: put event onto the asyncio queue from a sync thread."""
+        loop.call_soon_threadsafe(event_queue.put_nowait, event)
+
+    def run_analysis():
+        """
+        Runs in a separate thread (via asyncio.to_thread).
+        Pushes events to the queue so the async generator can yield them.
+        """
+        safe_log(f"\n[START] Платформа: {platform.upper()} | Запрос: '{keyword}' | Язык: {language}")
+
+        push_event({"type": "progress", "percent": 5,
+                    "message": f"Поиск и сбор вакансий на {platform.upper()}..."})
+
+        try:
+            scraper = ScraperFactory.get_scraper(platform)
+            raw_vacancies = scraper.fetch_jobs(keyword)
+            
+            # Limit to 14 vacancies maximum
+            if len(raw_vacancies) > 14:
+                raw_vacancies = raw_vacancies[:14]
+
+            total = len(raw_vacancies)
+            safe_log(f"[INFO] Найдено вакансий: {total}")
+
+            if total == 0:
+                safe_log("[FINISH] Вакансий не найдено.")
+                push_event({"type": "complete", "status": "success", "count": 0,
+                            "data": [], "message": f"По запросу '{keyword}' на {platform} ничего не найдено."})
+                return
+
+            total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+
+            push_event({"type": "progress", "percent": 15,
+                        "message": f"Найдено {total} вакансий. Запускаем ИИ-анализ ({total_batches} батч.)..."})
+
+            evaluator = AiEvaluator(api_key=api_key)
+            safe_log(f"[AI] Анализируем {total} вакансий через {evaluator.provider} ({evaluator.model})...")
+
+            # Hook for model switch notifications
+            def on_model_switch(old_model: str, new_model: str):
+                safe_log(f"    [MODEL SWITCH] {old_model} -> {new_model}")
+                push_event({
+                    "type": "model_switch",
+                    "percent": -1,  # sentinel: don't update bar
+                    "message": f"⚠️ Лимит модели «{old_model}» исчерпан — переключились на «{new_model}»"
+                })
+
+            evaluator.on_model_switch = on_model_switch
+
+            evaluated_vacancies = []
+
+            for start in range(0, total, BATCH_SIZE):
+                batch = raw_vacancies[start: start + BATCH_SIZE]
+                batch_num = start // BATCH_SIZE + 1
+
+                for idx, vac in enumerate(batch):
+                    vac["_temp_id"] = start + idx
+
+                vacancies_text = evaluator._build_batch_text(batch)
+                prompt = load_prompt(
+                    target_role=target_role,
+                    target_exp=target_exp,
+                    target_stack=keyword,
+                    language=language,
+                    vacancies_text=vacancies_text,
+                )
+
+                # Progress at start of batch
+                pct_start = 15 + int(((batch_num - 1) / total_batches) * 75)
+                push_event({"type": "progress", "percent": pct_start,
+                            "message": f"ИИ анализирует батч {batch_num}/{total_batches} (вакансии {start + 1}–{min(start + len(batch), total)})..."})
+
+                # --- Run AI call in a sub-thread so we can tick progress ---
+                import threading
+                ai_result_holder: list = []
+                ai_error_holder: list = []
+
+                def do_ai_call():
+                    try:
+                        result = evaluator._request_ai_with_retry(prompt)
+                        ai_result_holder.append(result)
+                    except Exception as e:
+                        ai_error_holder.append(e)
+
+                ai_thread = threading.Thread(target=do_ai_call, daemon=True)
+                ai_thread.start()
+
+                # Send intermediate progress ticks while AI is working
+                t0 = time.time()
+                pct_end = 15 + int((batch_num / total_batches) * 75)
+                tick_interval = 2.0  # seconds between ticks
+                while ai_thread.is_alive():
+                    ai_thread.join(timeout=tick_interval)
+                    if ai_thread.is_alive():
+                        # Smoothly crawl toward pct_end, but cap at pct_end - 2
+                        elapsed = time.time() - t0
+                        # Estimate: each batch takes ~10-20s → use time fraction
+                        estimated_time = 15.0
+                        frac = min(elapsed / estimated_time, 0.90)
+                        tick_pct = int(pct_start + frac * (pct_end - pct_start))
+                        tick_pct = min(tick_pct, pct_end - 1)  # never reach pct_end
+                        push_event({"type": "progress", "percent": tick_pct,
+                                    "message": f"ИИ думает... батч {batch_num}/{total_batches}"})
+
+                elapsed_total = time.time() - t0
+
+                if ai_error_holder:
+                    safe_log(f"  [ERROR] Сбой батча {batch_num}: {ai_error_holder[0]}")
+                    evaluated_vacancies.extend([evaluator._fallback_vacancy(v) for v in batch])
+                else:
+                    ai_results = ai_result_holder[0] if ai_result_holder else []
+                    merged = evaluator._merge_results(batch, ai_results)
+                    evaluated_vacancies.extend(merged)
+                    safe_log(f"  [AI] Батч {batch_num}/{total_batches} готов за {elapsed_total:.2f}с (распознано {len(ai_results)}/{len(batch)})")
+
+                # Progress at end of batch (confirmed)
+                push_event({"type": "progress", "percent": pct_end,
+                            "message": f"Батч {batch_num}/{total_batches} готов — проанализировано {len(evaluated_vacancies)}/{total}"})
+
+                if start + BATCH_SIZE < total:
+                    time.sleep(1.0)
+
+            safe_log(f"[FINISH] Готово к отправке: {len(evaluated_vacancies)}")
+
+            push_event({"type": "progress", "percent": 97,
+                        "message": "Сохранение результатов..."})
+
+            push_event({"type": "complete", "status": "success",
+                        "count": len(evaluated_vacancies), "data": evaluated_vacancies})
+
+        except Exception as exc:
+            safe_log(f"[SERVER ERROR] {exc}")
+            push_event({"type": "complete", "status": "error",
+                        "message": str(exc), "data": []})
+
+        finally:
+            # Sentinel: signal that the thread is done
+            push_event(None)
+
+    async def generate_events():
+        # Start analysis in a background thread
+        analysis_task = asyncio.create_task(asyncio.to_thread(run_analysis))
+
+        try:
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    # Sentinel: analysis complete
+                    break
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        finally:
+            # Make sure background task is awaited
+            try:
+                await analysis_task
+            except Exception:
+                pass
+
+    return StreamingResponse(generate_events(), media_type="application/x-ndjson")
