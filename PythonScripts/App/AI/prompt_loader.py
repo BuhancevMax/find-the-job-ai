@@ -11,6 +11,7 @@ def load_prompt(
     *,
     target_role: str,
     target_exp: str,
+    target_stack: str,
     language: str,
     vacancies_text: str,
 ) -> str:
@@ -20,6 +21,7 @@ def load_prompt(
     return template.substitute(
         target_role=target_role,
         target_exp=target_exp,
+        target_stack=target_stack,
         language=language,
         vacancies=vacancies_text,
     )

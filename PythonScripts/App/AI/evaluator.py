@@ -1,6 +1,5 @@
 import json
 import re
-import sys
 import time
 from openai import OpenAI
 
@@ -9,6 +8,7 @@ from App.config import (
     DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_GROQ_MODEL,
     DEFAULT_OPENROUTER_MODEL,
+    OPENROUTER_MODEL_FALLBACK_CHAIN,
     DEEPSEEK_BASE_URL,
     EXPERIENCE_WEIGHT,
     GROQ_BASE_URL,
@@ -18,6 +18,8 @@ from App.config import (
     TECH_WEIGHT,
 )
 from App.models import Vacancy
+
+BATCH_SIZE = 7   # Optimal: fewer API calls, fits well in context window
 
 
 def safe_log(msg: str):
@@ -33,8 +35,8 @@ def safe_log(msg: str):
 
 class AiEvaluator:
     """
-    Evaluates all vacancies in a single batch request with bulletproof
-    JSON and regex extraction for maximum speed and 100% reliability.
+    Evaluates vacancies in small batches of 5 for optimal token usage.
+    For OpenRouter: auto-switches to slower fallback model on 429.
     """
 
     def __init__(self, api_key: str, model: str | None = None):
@@ -42,19 +44,24 @@ class AiEvaluator:
             raise ValueError("API key не указан.")
 
         self.api_key = api_key.strip()
+        # Callback for model_switch events (used in streaming mode)
+        self.on_model_switch: callable | None = None
 
         if self.api_key.startswith("gsk_"):
             self.base_url = GROQ_BASE_URL
             self.model = model or DEFAULT_GROQ_MODEL
             self.provider = "Groq"
+            self._model_fallback_chain: list[str] | None = None
         elif self.api_key.startswith("sk-or-"):
             self.base_url = OPENROUTER_BASE_URL
             self.model = model or DEFAULT_OPENROUTER_MODEL
             self.provider = "OpenRouter"
+            self._model_fallback_chain = list(OPENROUTER_MODEL_FALLBACK_CHAIN)
         else:
             self.base_url = DEEPSEEK_BASE_URL
             self.model = model or DEFAULT_DEEPSEEK_MODEL
             self.provider = "DeepSeek"
+            self._model_fallback_chain = None
 
         self.client = OpenAI(
             api_key=self.api_key,
@@ -70,90 +77,209 @@ class AiEvaluator:
         vacancies: list[Vacancy],
         target_role: str,
         target_exp: str,
+        target_stack: str,
         language: str,
     ) -> list[Vacancy]:
         if not vacancies:
             return []
 
         total = len(vacancies)
-        safe_log(f"[AI] Отправляем единый батч из {total} вакансий в {self.provider} ({self.model})...")
+        evaluated_vacancies: list[Vacancy] = []
 
-        for idx, vac in enumerate(vacancies):
-            vac["_temp_id"] = idx
+        safe_log(f"[AI] Анализируем {total} вакансий через {self.provider} ({self.model})...")
 
-        vacancies_text = self._build_batch_text(vacancies)
+        for start in range(0, total, BATCH_SIZE):
+            batch = vacancies[start : start + BATCH_SIZE]
+            batch_num = start // BATCH_SIZE + 1
+            total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
 
-        prompt = load_prompt(
-            target_role=target_role,
-            target_exp=target_exp,
-            language=language,
-            vacancies_text=vacancies_text,
-        )
+            for idx, vac in enumerate(batch):
+                vac["_temp_id"] = start + idx
 
-        try:
-            start_time = time.time()
-            ai_results = self._request_ai_with_retry(prompt)
-            elapsed = time.time() - start_time
-            safe_log(f"  [AI] Ответ получен за {elapsed:.2f} сек (распознано {len(ai_results)}/{total})!")
-            return self._merge_results(vacancies, ai_results)
-        except Exception as exc:
-            safe_log(f"  [ERROR] Ошибка общего батча: {exc}")
-            return [self._fallback_vacancy(v) for v in vacancies]
+            vacancies_text = self._build_batch_text(batch)
+
+            prompt = load_prompt(
+                target_role=target_role,
+                target_exp=target_exp,
+                target_stack=target_stack,
+                language=language,
+                vacancies_text=vacancies_text,
+            )
+
+            try:
+                t0 = time.time()
+                ai_results = self._request_ai_with_retry(prompt)
+                elapsed = time.time() - t0
+                merged = self._merge_results(batch, ai_results)
+                evaluated_vacancies.extend(merged)
+                safe_log(f"  [AI] Батч {batch_num}/{total_batches} готов за {elapsed:.2f}с (распознано {len(ai_results)}/{len(batch)})")
+            except Exception as exc:
+                safe_log(f"  [ERROR] Сбой батча {batch_num}: {exc}")
+                evaluated_vacancies.extend([self._fallback_vacancy(v) for v in batch])
+
+            # 1.0s delay between batches to respect TPM
+            if start + BATCH_SIZE < total:
+                time.sleep(1.0)
+
+        return evaluated_vacancies
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _request_ai_with_retry(self, prompt: str, max_retries: int = 3) -> list[dict]:
+    def _request_ai_with_retry(self, prompt: str, max_retries: int = 4) -> list[dict]:
+        """
+        Retries up to max_retries times.
+        For OpenRouter: on 429, escalates through the fallback model chain
+        instead of just waiting, then retries immediately with the new model.
+        """
         last_exc: Exception | None = None
+        attempts_on_current_model = 0
+        MAX_ATTEMPTS_PER_MODEL = 2
 
-        for attempt in range(1, max_retries + 1):
+        attempt = 0
+        while attempt < max_retries:
+            attempt += 1
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
+                    temperature=0.05,
                     max_tokens=4096,
                 )
 
                 raw_content = response.choices[0].message.content or ""
-                return self._extract_results(raw_content)
+
+                # Log a preview to help diagnose parse failures
+                preview = raw_content[:200].replace("\n", " ")
+                safe_log(f"    [RAW] Model reply preview: {preview}")
+
+                results = self._extract_results(raw_content)
+                safe_log(f"    [PARSE] Extracted {len(results)} items from response")
+                
+                if len(results) == 0:
+                    raise ValueError("ParseError: Model returned 0 valid JSON items")
+                    
+                return results
+
             except Exception as exc:
                 last_exc = exc
-                wait = attempt * 2.0
-                safe_log(f"    [WARN] Попытка {attempt}/{max_retries}: повтор через {wait:.1f}с... ({exc})")
+                err_str = str(exc)
+                is_rate_limit = "429" in err_str or "rate_limit" in err_str.lower() or "quota" in err_str.lower()
+                is_parse_error = "ParseError" in err_str
+
+                # Try to switch to the next model in the chain for OpenRouter
+                if (is_rate_limit or is_parse_error) and self._model_fallback_chain:
+                    attempts_on_current_model += 1
+                    if attempts_on_current_model >= MAX_ATTEMPTS_PER_MODEL:
+                        # Remove exhausted model and switch to next
+                        if self.model in self._model_fallback_chain:
+                            self._model_fallback_chain.remove(self.model)
+
+                        if self._model_fallback_chain:
+                            old_model = self.model
+                            self.model = self._model_fallback_chain[0]
+                            attempts_on_current_model = 0
+                            safe_log(f"    [MODEL SWITCH] {old_model} -> {self.model}")
+                            if self.on_model_switch:
+                                self.on_model_switch(old_model, self.model)
+                            # Don't wait, retry immediately with new model
+                            continue
+                        else:
+                            safe_log("    [ERROR] Все резервные модели исчерпаны.")
+
+                # Parse wait time from error message
+                wait_match = re.search(r"try again in ([\d\.]+)s", err_str, re.IGNORECASE)
+                # Don't wait longer than 15 seconds for daily limit errors
+                if wait_match:
+                    try:
+                        wait = min(float(wait_match.group(1)) + 1.0, 15.0)
+                    except ValueError:
+                        wait = attempt * 3.0
+                else:
+                    wait = attempt * 3.0
+
+                safe_log(f"    [WARN] Попытка {attempt}/{max_retries}: ожидание {wait:.1f}с... ({exc})")
                 time.sleep(wait)
 
         raise last_exc  # type: ignore[misc]
 
     @staticmethod
     def _extract_results(text: str) -> list[dict]:
-        """Robust multi-layer JSON parser with regex fallback."""
+        """
+        Robust multi-layer JSON parser.
+        Handles: <think> tags, markdown code blocks, wrapped objects,
+        plain arrays, and partial/malformed JSON.
+        """
         if not text:
             return []
 
         clean_text = text.strip()
-        if "```json" in clean_text:
-            clean_text = clean_text.split("```json", 1)[1].split("```", 1)[0].strip()
-        elif "```" in clean_text:
-            clean_text = clean_text.split("```", 1)[1].split("```", 1)[0].strip()
 
-        # 1. Try full JSON parse
+        # ── Step 0: Strip reasoning/thinking tags (Nemotron, Qwen, DeepSeek-R1) ──
+        # Remove <think>...</think> and similar blocks
+        clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
+        clean_text = re.sub(r"<thinking>.*?</thinking>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
+        clean_text = re.sub(r"<reasoning>.*?</reasoning>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
+        clean_text = clean_text.strip()
+
+        # ── Step 1: Strip markdown code fences ──
+        if "```json" in clean_text:
+            clean_text = clean_text.split("```json", 1)[1]
+            if "```" in clean_text:
+                clean_text = clean_text.split("```", 1)[0]
+        elif "```" in clean_text:
+            # Try to find the content between first ``` pair
+            parts = clean_text.split("```")
+            if len(parts) >= 3:
+                clean_text = parts[1]
+            else:
+                clean_text = clean_text.replace("```", "")
+        clean_text = clean_text.strip()
+
+        # ── Step 2: Direct JSON parse ──
         try:
             parsed = json.loads(clean_text, strict=False)
             if isinstance(parsed, list):
-                return parsed
+                return [p for p in parsed if isinstance(p, dict)]
             if isinstance(parsed, dict):
-                for key in ("results", "data", "vacancies", "items"):
+                for key in ("results", "data", "vacancies", "items", "output"):
                     if isinstance(parsed.get(key), list):
-                        return parsed[key]
+                        return [p for p in parsed[key] if isinstance(p, dict)]
+                # If single dict with temp_id, wrap it
+                if "temp_id" in parsed:
+                    return [parsed]
+                # Any list value
                 for val in parsed.values():
-                    if isinstance(val, list):
-                        return val
+                    if isinstance(val, list) and val:
+                        return [p for p in val if isinstance(p, dict)]
         except Exception:
             pass
 
-        # 2. Extract item by item with regex
+        # ── Step 3: Find outermost JSON array or object ──
+        # Look for [...] first
+        bracket_match = re.search(r"\[[\s\S]*\]", clean_text)
+        if bracket_match:
+            try:
+                parsed = json.loads(bracket_match.group(0), strict=False)
+                if isinstance(parsed, list):
+                    return [p for p in parsed if isinstance(p, dict)]
+            except Exception:
+                pass
+
+        # Look for {...} with a "results" key
+        brace_match = re.search(r"\{[\s\S]*\}", clean_text)
+        if brace_match:
+            try:
+                parsed = json.loads(brace_match.group(0), strict=False)
+                if isinstance(parsed, dict):
+                    for key in ("results", "data", "vacancies", "items"):
+                        if isinstance(parsed.get(key), list):
+                            return [p for p in parsed[key] if isinstance(p, dict)]
+            except Exception:
+                pass
+
+        # ── Step 4: Extract item by item with regex ──
         items: list[dict] = []
         pattern = re.compile(r'\{\s*"temp_id"\s*:\s*(\d+).*?\}', re.DOTALL)
         for match in pattern.finditer(clean_text):
@@ -166,7 +292,6 @@ class AiEvaluator:
             except Exception:
                 pass
 
-            # Lenient field extraction
             try:
                 tid = int(match.group(1))
                 item_dict = {"temp_id": tid}
@@ -176,7 +301,7 @@ class AiEvaluator:
                     if m:
                         item_dict[field] = int(m.group(1))
 
-                for field in ["TechStack", "AiSummary", "ExtractedExperience"]:
+                for field in ["TechStack", "AiSummary", "ExtractedExperience", "detected_role", "detected_level", "critical_reason"]:
                     m = re.search(rf'"{field}"\s*:\s*"(.*?)"(?:\s*,\s*"|\s*}})', chunk, re.DOTALL)
                     if m:
                         item_dict[field] = m.group(1)
@@ -215,7 +340,7 @@ class AiEvaluator:
         clean = stripper.get_text()
         clean = " ".join(clean.split())
         clean = clean.replace('"', "'")
-        return clean[:300]
+        return clean[:350]
 
     @classmethod
     def _build_batch_text(cls, vacancies: list[Vacancy]) -> str:
@@ -263,13 +388,12 @@ class AiEvaluator:
                     try:
                         result_map[int(tid)] = res
                     except (ValueError, TypeError):
-                        result_map[idx] = res
-                else:
-                    result_map[idx] = res
+                        pass
 
         merged: list[Vacancy] = []
-        for idx, vac in enumerate(vacancies):
-            res = result_map.get(idx)
+        for vac in vacancies:
+            tid = vac.get("_temp_id")
+            res = result_map.get(tid)
             if not res:
                 merged.append(cls._fallback_vacancy(vac))
                 continue

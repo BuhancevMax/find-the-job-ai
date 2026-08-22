@@ -9,166 +9,254 @@
 
 <PageTitle>Парсер Вакансий</PageTitle>
 
-<h1 class="mb-4">Сбор вакансий</h1>
+<!-- Основной лэйаут: боковая панель стека + основная часть -->
+<div class="d-flex gap-3" style="align-items: flex-start;">
 
-<!-- Блок настроек с вводом ключа -->
-<div class="card mb-4 shadow-sm">
-    <div class="card-body">
-        <h5 class="card-title">Настройки ИИ</h5>
-        <div class="input-group mb-3">
-            <span class="input-group-text">🔑 API Key</span>
-            <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="API Key (Groq: gsk_... или OpenRouter: sk-or-...)" />
-        </div>
-        
-       <!-- ФИЛЬТРЫ -->
-        <div class="row">
-            <!-- Платформа -->
-            <div class="col-md-2 mb-2">
-                <div class="input-group">
-                    <span class="input-group-text">🌐 Сайт</span>
-                    <select class="form-select" @bind="targetPlatform">
-                        <option value="djinni">Djinni.co</option>
-                        <option value="workua">Work.ua</option>
-                    </select>
-                </div>
+    <!-- ====== БОКОВАЯ ПАНЕЛЬ: СТЕК ====== -->
+    <div class="card shadow-sm flex-shrink-0" style="width: 220px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto;">
+        <div class="card-body p-2">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="card-title mb-0 fw-bold" style="font-size: 0.85rem;">⚙️ Стек</h6>
+                <button class="btn btn-link btn-sm text-danger p-0" style="font-size: 0.75rem;" @onclick="ClearStack">Сбросить</button>
             </div>
 
-            <!-- Язык ИИ -->
-            <div class="col-md-2 mb-2">
-                <div class="input-group">
-                    <span class="input-group-text">🌍 Язык</span>
-                    <select class="form-select" @bind="targetLanguage">
-                        <option value="Українська">UA</option>
-                        <option value="English">EN</option>
-                    </select>
+            @foreach (var group in StackGroups)
+            {
+                <div class="mb-2">
+                    <small class="text-muted fw-bold text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.5px;">@group.Key</small>
+                    @foreach (var tech in group.Value)
+                    {
+                        <div class="form-check" style="margin-bottom: 1px;">
+                            <input class="form-check-input" type="checkbox" id="tech_@tech" 
+                                   checked="@selectedStacks.Contains(tech)"
+                                   @onchange="(e) => ToggleStack(tech, (bool)(e.Value ?? false))"
+                                   style="cursor: pointer;" />
+                            <label class="form-check-label" for="tech_@tech" style="font-size: 0.8rem; cursor: pointer;">
+                                @tech
+                            </label>
+                        </div>
+                    }
                 </div>
-            </div>
+            }
 
-            <!-- Ключевое слово -->
-            <div class="col-md-3 mb-2">
-                <div class="input-group">
-                    <span class="input-group-text">🔍 Стек</span>
-                    <input type="text" class="form-control" @bind="searchKeyword" placeholder="C#, Python..." />
+            @if (selectedStacks.Any())
+            {
+                <div class="mt-2 p-2 bg-primary bg-opacity-10 rounded" style="font-size: 0.72rem;">
+                    <strong>Выбрано (@selectedStacks.Count):</strong><br />
+                    @string.Join(", ", selectedStacks)
                 </div>
-            </div>
-            
-            <!-- Должность -->
-            <div class="col-md-3 mb-2">
-                <div class="input-group">
-                    <span class="input-group-text">💼 Роль</span>
-                    <select class="form-select" @bind="targetRole">
-                        <option value="Trainee/Junior Software Engineer (.NET)">Trainee/Junior .NET</option>
-                        <option value="Middle Software Engineer (.NET)">Middle .NET</option>
-                        <option value="Fullstack Developer (.NET + React/Angular)">Fullstack .NET</option>
-                        <option value="Любой Backend разработчик">Любой Backend</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Опыт -->
-            <div class="col-md-2 mb-2">
-                <div class="input-group">
-                    <span class="input-group-text">⏳ Опыт</span>
-                    <select class="form-select" @bind="targetExp">
-                        <option value="Без коммерческого опыта (Студент)">Без коммерческого опыта</option>
-                        <option value="Менее 1 года">Менее 1 года</option>
-                        <option value="1-3 года">1-3 года</option>
-                        <option value="Более 3 лет">Более 3 лет</option>
-                    </select>
-                </div>
-            </div>
+            }
         </div>
     </div>
-</div>
 
-<!-- Панель управления -->
-<div class="d-flex justify-content-between mb-3 align-items-center">
-    <div>
-        <button class="btn btn-primary" @onclick="StartParsing" disabled="@IsButtonDisabled">
-            @if (isLoading)
-            {
-                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                <span> Парсинг и анализ...</span>
-            }
-            else
-            {
-                <span>🌐 Свежий парсинг (Djinni)</span>
-            }
-        </button>
-        <button class="btn btn-outline-secondary ms-2" @onclick="LoadFromDb">
-            🗄 Обновить из БД
-        </button>
-        <button class="btn btn-outline-danger ms-2" @onclick="ClearCache">
-            🗑 Очистить кэш
-        </button>
-    </div>
-    
-    <div class="btn-group" role="group">
-        <button type="button" class="btn @(showOnlySaved ? "btn-outline-primary" : "btn-primary")" @onclick="() => SetView(false)">Все (Кэш)</button>
-        <button type="button" class="btn @(showOnlySaved ? "btn-primary" : "btn-outline-primary")" @onclick="() => SetView(true)">⭐ Избранное</button>
-    </div>
-</div>
+    <!-- ====== ПРАВАЯ ЧАСТЬ: основной контент ====== -->
+    <div class="flex-grow-1 min-width-0">
 
-@if (!string.IsNullOrEmpty(errorMessage))
-{
-    <div class="alert alert-danger mt-2">@errorMessage</div>
-}
+        <h1 class="mb-3">Сбор вакансий</h1>
 
-<!-- Таблица с результатами -->
-@if (displayVacancies != null && displayVacancies.Any())
-{
-    <table class="table table-hover table-bordered shadow-sm align-middle">
-        <thead class="table-dark">
-        <tr>
-            <th style="width: 50px;" class="text-center">#</th>
-            <th style="cursor: pointer;" @onclick='() => SortBy("Title")'>
-                Название @GetSortIcon("Title")
-            </th>
-            <th style="cursor: pointer;" @onclick='() => SortBy("RequiredExperience")'>
-                Опыт @GetSortIcon("RequiredExperience")
-            </th>
-            <th>Стек (ИИ)</th>
-            <th>Саммари (ИИ)</th>
-            <th style="cursor: pointer; width: 100px;" class="text-center" @onclick='() => SortBy("AiMatchScore")'>
-                Скор @GetSortIcon("AiMatchScore")
-            </th>
-        </tr>
-        </thead>
-        <tbody>
-            @foreach (var vac in displayVacancies)
-            {
-                <tr>
-                    <td class="text-center text-nowrap">
-                        <button class="btn btn-sm @(vac.IsSaved ? "btn-warning" : "btn-light")" @onclick="() => ToggleSave(vac)" style="width: 35px;" title="В избранное">
-                            @(vac.IsSaved ? "⭐" : "☆")
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => RejectVacancy(vac)" style="width: 35px;" title="Скрыть навсегда">
-                            🗑
-                        </button>
-                    </td>
-                    <td><a href="@vac.Url" target="_blank" class="text-decoration-none fw-bold">@vac.Title</a></td>
-                    <td>@vac.RequiredExperience</td>
-                    <td>@vac.TechStack</td>
-                    <td>@vac.AiSummary</td>
-                    <td class="text-center">
-                        <span class="badge rounded-pill @(vac.AiMatchScore > 70 ? "bg-success" : (vac.AiMatchScore > 40 ? "bg-warning text-dark" : "bg-danger"))" style="font-size: 1rem;">
-                            @vac.AiMatchScore
+        <!-- Блок настроек -->
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Настройки ИИ</h5>
+                <div class="input-group mb-3">
+                    <span class="input-group-text">🔑 API Key</span>
+                    <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="API Key (Groq: gsk_... или OpenRouter: sk-or-...)" />
+                </div>
+
+                <!-- ФИЛЬТРЫ -->
+                <div class="row">
+                    <!-- Платформа -->
+                    <div class="col-md-3 mb-2">
+                        <div class="input-group">
+                            <span class="input-group-text">🌐 Сайт</span>
+                            <select class="form-select" @bind="targetPlatform">
+                                <option value="djinni">Djinni.co</option>
+                                <option value="workua">Work.ua</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Язык ИИ -->
+                    <div class="col-md-2 mb-2">
+                        <div class="input-group">
+                            <span class="input-group-text">🌍 Язык</span>
+                            <select class="form-select" @bind="targetLanguage">
+                                <option value="Українська">UA</option>
+                                <option value="English">EN</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Должность -->
+                    <div class="col-md-4 mb-2">
+                        <div class="input-group">
+                            <span class="input-group-text">💼 Роль</span>
+                            <select class="form-select" @bind="targetRole">
+                                <option value="Trainee/Junior Developer">Trainee/Junior</option>
+                                <option value="Middle Developer">Middle</option>
+                                <option value="Senior Developer">Senior</option>
+                                <option value="Lead/Architect">Lead/Architect</option>
+                                <option value="Fullstack Developer">Fullstack</option>
+                                <option value="Любой разработчик">Любой разработчик</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Опыт -->
+                    <div class="col-md-3 mb-2">
+                        <div class="input-group">
+                            <span class="input-group-text">⏳ Опыт</span>
+                            <select class="form-select" @bind="targetExp">
+                                <option value="Без коммерческого опыта (Студент)">Без коммерческого опыта</option>
+                                <option value="Менее 1 года">Менее 1 года</option>
+                                <option value="1-3 года">1-3 года</option>
+                                <option value="Более 3 лет">Более 3 лет</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                @if (!selectedStacks.Any())
+                {
+                    <div class="alert alert-warning py-1 px-2 mb-0 mt-1" style="font-size: 0.82rem;">
+                        ⚠️ Не выбраны технологии. Выберите хотя бы одну в левой панели «Стек».
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Панель управления -->
+        <div class="d-flex justify-content-between mb-3 align-items-center">
+            <div>
+                <button class="btn btn-primary" @onclick="StartParsing" disabled="@IsButtonDisabled">
+                    @if (isLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span> Обработка...</span>
+                    }
+                    else
+                    {
+                        <span>🌐 Свежий парсинг (@(targetPlatform == "djinni" ? "Djinni" : "Work.ua"))</span>
+                    }
+                </button>
+                <button class="btn btn-outline-secondary ms-2" @onclick="LoadFromDb" disabled="@isLoading">
+                    🗄 Обновить из БД
+                </button>
+                <button class="btn btn-outline-danger ms-2" @onclick="ClearCache" disabled="@isLoading">
+                    🗑 Очистить кэш
+                </button>
+            </div>
+
+            <div class="btn-group" role="group">
+                <button type="button" class="btn @(showOnlySaved ? "btn-outline-primary" : "btn-primary")" @onclick="() => SetView(false)">Все (Кэш)</button>
+                <button type="button" class="btn @(showOnlySaved ? "btn-primary" : "btn-outline-primary")" @onclick="() => SetView(true)">⭐ Избранное</button>
+            </div>
+        </div>
+
+        <!-- Индикатор прогресса и таймер ожидания -->
+        @if (isLoading)
+        {
+            <div class="card mb-3 border-primary shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="card-title text-primary mb-0 fw-bold">
+                            <span class="spinner-border spinner-border-sm text-primary me-2" role="status"></span>
+                            @loadingStatusText
+                        </h6>
+                        <span class="badge bg-primary fs-6">
+                            ⏱ @(elapsedSeconds)с
                         </span>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
-else if (hasLoaded)
-{
-    <div class="alert alert-info">В базе данных пока пусто. Запустите свежий парсинг.</div>
-}
+                    </div>
+                    <div class="progress" style="height: 24px; border-radius: 6px; overflow: hidden; background-color: #e9ecef;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated @(progressPercent >= 100 ? "bg-success" : "bg-primary") fw-bold"
+                             role="progressbar"
+                             style="width: @(progressPercent)%; transition: width 0.8s ease-in-out;"
+                             aria-valuenow="@progressPercent"
+                             aria-valuemin="0"
+                             aria-valuemax="100">
+                            @(progressPercent)%
+                        </div>
+                    </div>
+                    <small class="text-muted mt-2 d-block">
+                        💡 ИИ анализирует соответствие стека, уровня и опыта для всех найденных вакансий...
+                    </small>
+                </div>
+            </div>
+        }
+
+        <!-- Предупреждение о смене модели -->
+        @if (!string.IsNullOrEmpty(modelSwitchWarning))
+        {
+            <div class="alert alert-warning py-2 px-3 mb-3">
+                @modelSwitchWarning
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-2">@errorMessage</div>
+        }
+
+        <!-- Таблица с результатами -->
+        @if (displayVacancies != null && displayVacancies.Any())
+        {
+            <table class="table table-hover table-bordered shadow-sm align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 50px;" class="text-center">#</th>
+                        <th style="cursor: pointer;" @onclick='() => SortBy("Title")'>
+                            Название @GetSortIcon("Title")
+                        </th>
+                        <th style="cursor: pointer;" @onclick='() => SortBy("RequiredExperience")'>
+                            Опыт @GetSortIcon("RequiredExperience")
+                        </th>
+                        <th>Стек (ИИ)</th>
+                        <th>Заключение ИИ</th>
+                        <th style="cursor: pointer; width: 100px;" class="text-center" @onclick='() => SortBy("AiMatchScore")'>
+                            Оценка @GetSortIcon("AiMatchScore")
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var vac in displayVacancies)
+                    {
+                        <tr>
+                            <td class="text-center text-nowrap">
+                                <button class="btn btn-sm @(vac.IsSaved ? "btn-warning" : "btn-light")" @onclick="() => ToggleSave(vac)" style="width: 35px;" title="В избранное">
+                                    @(vac.IsSaved ? "⭐" : "☆")
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => RejectVacancy(vac)" style="width: 35px;" title="Скрыть навсегда">
+                                    🗑
+                                </button>
+                            </td>
+                            <td><a href="@vac.Url" target="_blank" class="text-decoration-none fw-bold">@vac.Title</a></td>
+                            <td>@vac.RequiredExperience</td>
+                            <td>@vac.TechStack</td>
+                            <td>@vac.AiSummary</td>
+                            <td class="text-center">
+                                <span class="badge rounded-pill @(vac.AiMatchScore > 70 ? "bg-success" : (vac.AiMatchScore > 40 ? "bg-warning text-dark" : "bg-danger"))" style="font-size: 1rem;">
+                                    @vac.AiMatchScore
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else if (hasLoaded)
+        {
+            <div class="alert alert-info">В базе данных пока пусто. Запустите свежий парсинг.</div>
+        }
+
+    </div><!-- /right column -->
+</div><!-- /main flex -->
 
 @code {
+    // ---------------------------------------------------------------
+    // State
+    // ---------------------------------------------------------------
     private string targetLanguage = "Українська";
     private string targetPlatform = "djinni";
-    private string searchKeyword = ""; // Значение по умолчанию
     private string apiKey = "";
     private string targetRole = "";
     private string targetExp = "";
@@ -176,60 +264,107 @@ else if (hasLoaded)
     private bool hasLoaded = false;
     private string errorMessage = "";
     private bool showOnlySaved = false;
-    
+    private string modelSwitchWarning = "";
+
     private List<BlazorApp1.Models.Vacancy> displayVacancies = new();
 
-    private bool IsButtonDisabled => isLoading || string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 10;
+    // Stack checkboxes
+    private HashSet<string> selectedStacks = new();
 
+    /// <summary>Keyword sent to the scraper (comma-joined selected stacks).</summary>
+    private string SearchKeyword => string.Join(", ", selectedStacks);
+
+    private bool IsButtonDisabled => isLoading || string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 10 || !selectedStacks.Any();
+
+    // ---------------------------------------------------------------
+    // Stack groups definition
+    // ---------------------------------------------------------------
+    private static readonly Dictionary<string, List<string>> StackGroups = new()
+    {
+        ["Backend"] = new() { "C#", ".NET", "Java", "Python", "Go", "PHP", "Ruby", "Rust", "C++" },
+        ["Frontend"] = new() { "JavaScript", "TypeScript", "React", "Angular", "Vue.js", "Next.js" },
+        ["Mobile"] = new() { "Flutter", "React Native", "Swift", "Kotlin" },
+        ["DevOps / Cloud"] = new() { "Docker", "Kubernetes", "AWS", "Azure", "CI/CD" },
+        ["QA"] = new() { "QA / Testing", "Selenium", "Playwright" },
+        ["БД"] = new() { "SQL", "PostgreSQL", "MongoDB", "Redis", "MySQL" },
+        ["AI / ML"] = new() { "Python ML", "PyTorch", "TensorFlow", "LLM" },
+    };
+
+    // ---------------------------------------------------------------
+    // Lifecycle
+    // ---------------------------------------------------------------
     protected override async Task OnInitializedAsync()
     {
         await LoadFromDb();
     }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Читаем из памяти только один раз при первой загрузке страницы
         if (firstRender)
         {
-            var keywordResult = await BrowserStorage.GetAsync<string>("savedKeyword");
-            if (keywordResult.Success && !string.IsNullOrEmpty(keywordResult.Value)) 
-                searchKeyword = keywordResult.Value;
-            
             var keyResult = await BrowserStorage.GetAsync<string>("savedApiKey");
-            if (keyResult.Success && !string.IsNullOrEmpty(keyResult.Value)) 
+            if (keyResult.Success && !string.IsNullOrEmpty(keyResult.Value))
                 apiKey = keyResult.Value;
 
             var roleResult = await BrowserStorage.GetAsync<string>("savedRole");
-            if (roleResult.Success && !string.IsNullOrEmpty(roleResult.Value)) 
+            if (roleResult.Success && !string.IsNullOrEmpty(roleResult.Value))
                 targetRole = roleResult.Value;
 
             var expResult = await BrowserStorage.GetAsync<string>("savedExp");
-            if (expResult.Success && !string.IsNullOrEmpty(expResult.Value)) 
+            if (expResult.Success && !string.IsNullOrEmpty(expResult.Value))
                 targetExp = expResult.Value;
-            
+
             var langResult = await BrowserStorage.GetAsync<string>("savedLanguage");
-            if (langResult.Success && !string.IsNullOrEmpty(langResult.Value)) 
+            if (langResult.Success && !string.IsNullOrEmpty(langResult.Value))
                 targetLanguage = langResult.Value;
 
-            // Говорим Блазору: "Мы обновили переменные, перерисуй интерфейс"
+            // Restore selected stacks from storage
+            var stacksResult = await BrowserStorage.GetAsync<string>("savedStacks");
+            if (stacksResult.Success && !string.IsNullOrEmpty(stacksResult.Value))
+            {
+                selectedStacks = new HashSet<string>(
+                    stacksResult.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                );
+            }
+
             StateHasChanged();
         }
     }
-    
+
+    // ---------------------------------------------------------------
+    // Stack checkbox logic
+    // ---------------------------------------------------------------
+    private async Task ToggleStack(string tech, bool isChecked)
+    {
+        if (isChecked)
+            selectedStacks.Add(tech);
+        else
+            selectedStacks.Remove(tech);
+
+        await BrowserStorage.SetAsync("savedStacks", string.Join(",", selectedStacks));
+    }
+
+    private async Task ClearStack()
+    {
+        selectedStacks.Clear();
+        await BrowserStorage.SetAsync("savedStacks", "");
+    }
+
+    // ---------------------------------------------------------------
+    // Sorting
+    // ---------------------------------------------------------------
     private string currentSortColumn = "AiMatchScore";
-    private bool isAscending = false; 
+    private bool isAscending = false;
 
     private void SortBy(string columnName)
     {
         if (currentSortColumn == columnName)
-        {
             isAscending = !isAscending;
-        }
         else
         {
             currentSortColumn = columnName;
             isAscending = true;
         }
-
         ApplySorting();
     }
 
@@ -237,14 +372,14 @@ else if (hasLoaded)
     {
         displayVacancies = currentSortColumn switch
         {
-            "Title" => isAscending 
-                ? displayVacancies.OrderBy(v => v.Title).ToList() 
+            "Title" => isAscending
+                ? displayVacancies.OrderBy(v => v.Title).ToList()
                 : displayVacancies.OrderByDescending(v => v.Title).ToList(),
-            "RequiredExperience" => isAscending 
-                ? displayVacancies.OrderBy(v => ParseExperienceToMonths(v.RequiredExperience)).ToList() 
+            "RequiredExperience" => isAscending
+                ? displayVacancies.OrderBy(v => ParseExperienceToMonths(v.RequiredExperience)).ToList()
                 : displayVacancies.OrderByDescending(v => ParseExperienceToMonths(v.RequiredExperience)).ToList(),
-            "AiMatchScore" => isAscending 
-                ? displayVacancies.OrderBy(v => v.AiMatchScore).ToList() 
+            "AiMatchScore" => isAscending
+                ? displayVacancies.OrderBy(v => v.AiMatchScore).ToList()
                 : displayVacancies.OrderByDescending(v => v.AiMatchScore).ToList(),
             _ => displayVacancies
         };
@@ -256,6 +391,9 @@ else if (hasLoaded)
         return isAscending ? "▲" : "▼";
     }
 
+    // ---------------------------------------------------------------
+    // DB helpers
+    // ---------------------------------------------------------------
     private async Task ClearCache()
     {
         try
@@ -277,7 +415,7 @@ else if (hasLoaded)
             ApplySorting();
             hasLoaded = true;
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             errorMessage = "Ошибка чтения БД: " + ex.Message;
         }
@@ -286,7 +424,7 @@ else if (hasLoaded)
     private async Task RejectVacancy(BlazorApp1.Models.Vacancy vac)
     {
         await VacancyService.RejectVacancyAsync(vac);
-        displayVacancies.Remove(vac); 
+        displayVacancies.Remove(vac);
     }
 
     private async Task SetView(bool showSaved)
@@ -300,37 +438,117 @@ else if (hasLoaded)
         await VacancyService.ToggleSaveAsync(vac);
     }
 
+    // ---------------------------------------------------------------
+    // Progress bar + Timer state
+    // ---------------------------------------------------------------
+    private int elapsedSeconds = 0;
+    private int progressPercent = 5;
+    private string loadingStatusText = "🔍 Поиск и сбор вакансий...";
+    private System.Threading.CancellationTokenSource? loadingCts;
+
+    // ---------------------------------------------------------------
+    // Main parsing logic
+    // ---------------------------------------------------------------
     private async Task StartParsing()
     {
         isLoading = true;
         errorMessage = "";
+        modelSwitchWarning = "";
+        elapsedSeconds = 0;
+        progressPercent = 5;
+        loadingStatusText = $"🔍 Поиск и сбор вакансий на {(targetPlatform == "djinni" ? "Djinni.co" : "Work.ua")}...";
+
+        loadingCts = new System.Threading.CancellationTokenSource();
+        var ct = loadingCts.Token;
+
+        // --- System.Timers.Timer for reliable UI updates ---
+        using var timer = new System.Timers.Timer(1000);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        timer.Elapsed += async (sender, e) =>
+        {
+            var secs = (int)stopwatch.Elapsed.TotalSeconds;
+            if (secs != elapsedSeconds)
+            {
+                elapsedSeconds = secs;
+                await InvokeAsync(StateHasChanged);
+            }
+        };
+        timer.Start();
+
         StateHasChanged();
 
         try
         {
             await BrowserStorage.SetAsync("savedLanguage", targetLanguage);
-            await BrowserStorage.SetAsync("savedKeyword", searchKeyword);
             await BrowserStorage.SetAsync("savedApiKey", apiKey);
             await BrowserStorage.SetAsync("savedRole", targetRole);
             await BrowserStorage.SetAsync("savedExp", targetExp);
-            string keyword = Uri.EscapeDataString(searchKeyword);
+
+            // Build keyword: join selected stacks (primary first, add "OR" semantics via Python)
+            string keyword = Uri.EscapeDataString(SearchKeyword);
             string role = Uri.EscapeDataString(targetRole);
             string exp = Uri.EscapeDataString(targetExp);
             string key = Uri.EscapeDataString(apiKey);
             string lang = Uri.EscapeDataString(targetLanguage);
-            string requestUrl = $"http://127.0.0.1:8000/parse/{targetPlatform}?keyword={keyword}&api_key={key}&target_role={role}&target_exp={exp}&language={lang}";
-            
-            var response = await Http.GetFromJsonAsync<PythonApiResponse>(requestUrl);
-            
-            if (response != null && response.status == "success" && response.data != null && response.data.Any())
+            string requestUrl = $"http://127.0.0.1:8000/parse-stream/{targetPlatform}?keyword={keyword}&api_key={key}&target_role={role}&target_exp={exp}&language={lang}";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
+
+            using var stream = await response.Content.ReadAsStreamAsync(ct);
+            using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8, false, 1);
+
+            while (!reader.EndOfStream && !ct.IsCancellationRequested)
             {
-                await VacancyService.SaveNewVacanciesAsync(response.data);
-                showOnlySaved = false;
-                await LoadFromDb();
-            }
-            else
-            {
-                errorMessage = response?.message ?? "Парсер вернул 0 вакансий.";
+                var line = await reader.ReadLineAsync(ct);
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                try
+                {
+                    var streamEvent = System.Text.Json.JsonSerializer.Deserialize<StreamEventMessage>(line,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                    if (streamEvent == null) continue;
+
+                    if (streamEvent.type == "progress")
+                    {
+                        if (streamEvent.percent >= 0)
+                            progressPercent = streamEvent.percent;
+                        loadingStatusText = streamEvent.message;
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    else if (streamEvent.type == "model_switch")
+                    {
+                        // Show warning without touching progress bar
+                        modelSwitchWarning = streamEvent.message;
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    else if (streamEvent.type == "complete")
+                    {
+                        progressPercent = 100;
+                        loadingStatusText = "✅ Анализ завершён!";
+                        await InvokeAsync(StateHasChanged);
+
+                        await Task.Delay(700, ct);
+
+                        if (streamEvent.status == "success" && streamEvent.data != null && streamEvent.data.Any())
+                        {
+                            await VacancyService.SaveNewVacanciesAsync(streamEvent.data);
+                            showOnlySaved = false;
+                            await LoadFromDb();
+                        }
+                        else
+                        {
+                            errorMessage = streamEvent.message ?? "Парсер вернул 0 вакансий.";
+                        }
+                        break;
+                    }
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    // Ignore non-json lines
+                }
             }
         }
         catch (Exception ex)
@@ -339,14 +557,21 @@ else if (hasLoaded)
         }
         finally
         {
+            loadingCts?.Cancel();
+            loadingCts?.Dispose();
+            loadingCts = null;
             isLoading = false;
-            StateHasChanged();
+            if (timer != null) timer.Stop();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
+    // ---------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------
     private int ParseExperienceToMonths(string exp)
     {
-        if (string.IsNullOrWhiteSpace(exp) || exp.ToLower().Contains("not specified")) 
+        if (string.IsNullOrWhiteSpace(exp) || exp.ToLower().Contains("not specified"))
             return -1;
 
         var lowerExp = exp.ToLower();
@@ -359,6 +584,19 @@ else if (hasLoaded)
         if (lowerExp.Contains("год") || lowerExp.Contains("лет") || lowerExp.Contains("года")) return number * 12;
 
         return number;
+    }
+
+    // ---------------------------------------------------------------
+    // DTOs for streaming
+    // ---------------------------------------------------------------
+    public class StreamEventMessage
+    {
+        public string type { get; set; } = "";
+        public int percent { get; set; } = -1;
+        public string message { get; set; } = "";
+        public string status { get; set; } = "";
+        public int count { get; set; }
+        public List<BlazorApp1.Models.Vacancy> data { get; set; } = new();
     }
 
     public class PythonApiResponse
