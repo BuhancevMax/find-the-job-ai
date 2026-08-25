@@ -1,6 +1,9 @@
 import json
 import re
+import threading
 import time
+from collections.abc import Callable
+
 from openai import OpenAI
 
 from App.AI.prompt_loader import load_prompt
@@ -17,12 +20,12 @@ from App.config import (
     ROLE_WEIGHT,
     TECH_WEIGHT,
 )
-from App.models import Vacancy
+from App.models import Vacancy, JobCriteria
 
-BATCH_SIZE = 7   # Optimal: fewer API calls, fits well in context window
+BATCH_SIZE = 7
 
 
-def safe_log(msg: str):
+def safe_log(msg: str) -> None:
     """Safely print messages on any Windows console encoding."""
     try:
         print(msg)
@@ -35,8 +38,8 @@ def safe_log(msg: str):
 
 class AiEvaluator:
     """
-    Evaluates vacancies in small batches of 5 for optimal token usage.
-    For OpenRouter: auto-switches to slower fallback model on 429.
+    Evaluates vacancies in batches via an OpenAI-compatible LLM.
+    For OpenRouter: auto-switches to slower fallback model on 429 or parse error.
     """
 
     def __init__(self, api_key: str, model: str | None = None):
@@ -44,24 +47,25 @@ class AiEvaluator:
             raise ValueError("API key не указан.")
 
         self.api_key = api_key.strip()
-        # Callback for model_switch events (used in streaming mode)
-        self.on_model_switch: callable | None = None
+        # Callback fired when a model switch happens (streaming mode)
+        self.on_model_switch: Callable[[str, str], None] | None = None
 
         if self.api_key.startswith("gsk_"):
             self.base_url = GROQ_BASE_URL
             self.model = model or DEFAULT_GROQ_MODEL
             self.provider = "Groq"
-            self._model_fallback_chain: list[str] | None = None
+            # Immutable original chain — used to restore per-call
+            self._fallback_chain_original: list[str] | None = None
         elif self.api_key.startswith("sk-or-"):
             self.base_url = OPENROUTER_BASE_URL
             self.model = model or DEFAULT_OPENROUTER_MODEL
             self.provider = "OpenRouter"
-            self._model_fallback_chain = list(OPENROUTER_MODEL_FALLBACK_CHAIN)
+            self._fallback_chain_original = list(OPENROUTER_MODEL_FALLBACK_CHAIN)
         else:
             self.base_url = DEEPSEEK_BASE_URL
             self.model = model or DEFAULT_DEEPSEEK_MODEL
             self.provider = "DeepSeek"
-            self._model_fallback_chain = None
+            self._fallback_chain_original = None
 
         self.client = OpenAI(
             api_key=self.api_key,
@@ -75,49 +79,95 @@ class AiEvaluator:
     def evaluate_vacancies(
         self,
         vacancies: list[Vacancy],
-        target_role: str,
-        target_exp: str,
-        target_stack: str,
-        language: str,
+        criteria: JobCriteria,
+        on_progress: Callable[[int, str], None] | None = None,
     ) -> list[Vacancy]:
+        """
+        Evaluate all vacancies, processing them in batches.
+
+        on_progress(percent: int, message: str) is called:
+          - at start of each batch (pct_start)
+          - every ~2s while the AI is thinking (smooth crawl)
+          - at end of each batch (pct_end)
+        """
         if not vacancies:
             return []
 
         total = len(vacancies)
+        total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
         evaluated_vacancies: list[Vacancy] = []
 
         safe_log(f"[AI] Анализируем {total} вакансий через {self.provider} ({self.model})...")
 
-        for start in range(0, total, BATCH_SIZE):
-            batch = vacancies[start : start + BATCH_SIZE]
-            batch_num = start // BATCH_SIZE + 1
-            total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+        for batch_num in range(1, total_batches + 1):
+            start = (batch_num - 1) * BATCH_SIZE
+            batch_raw = vacancies[start: start + BATCH_SIZE]
 
-            for idx, vac in enumerate(batch):
-                vac["_temp_id"] = start + idx
+            # Fix #8: use dict copy so original list is never mutated
+            batch = [{**vac, "_temp_id": start + idx} for idx, vac in enumerate(batch_raw)]
 
             vacancies_text = self._build_batch_text(batch)
-
             prompt = load_prompt(
-                target_role=target_role,
-                target_exp=target_exp,
-                target_stack=target_stack,
-                language=language,
+                criteria=criteria,
                 vacancies_text=vacancies_text,
             )
 
-            try:
-                t0 = time.time()
-                ai_results = self._request_ai_with_retry(prompt)
-                elapsed = time.time() - t0
+            pct_start = 15 + int(((batch_num - 1) / total_batches) * 75)
+            pct_end = 15 + int((batch_num / total_batches) * 75)
+
+            if on_progress:
+                on_progress(
+                    pct_start,
+                    f"ИИ анализирует батч {batch_num}/{total_batches} "
+                    f"(вакансии {start + 1}–{min(start + len(batch), total)})...",
+                )
+
+            # --- Run AI call in a thread; tick progress while waiting ---
+            result_holder: list = []
+            error_holder: list = []
+
+            def do_ai_call(p=prompt, rh=result_holder, eh=error_holder):
+                try:
+                    rh.append(self._request_ai_with_retry(p))
+                except Exception as e:
+                    eh.append(e)
+
+            ai_thread = threading.Thread(target=do_ai_call, daemon=True)
+            ai_thread.start()
+
+            t0 = time.time()
+            while ai_thread.is_alive():
+                ai_thread.join(timeout=2.0)
+                if ai_thread.is_alive() and on_progress:
+                    elapsed = time.time() - t0
+                    frac = min(elapsed / 15.0, 0.90)
+                    tick_pct = min(
+                        int(pct_start + frac * (pct_end - pct_start)),
+                        pct_end - 1,
+                    )
+                    on_progress(tick_pct, f"ИИ думает... батч {batch_num}/{total_batches}")
+
+            elapsed_total = time.time() - t0
+
+            if error_holder:
+                safe_log(f"  [ERROR] Сбой батча {batch_num}: {error_holder[0]}")
+                evaluated_vacancies.extend([self._fallback_vacancy(v) for v in batch])
+            else:
+                ai_results = result_holder[0] if result_holder else []
                 merged = self._merge_results(batch, ai_results)
                 evaluated_vacancies.extend(merged)
-                safe_log(f"  [AI] Батч {batch_num}/{total_batches} готов за {elapsed:.2f}с (распознано {len(ai_results)}/{len(batch)})")
-            except Exception as exc:
-                safe_log(f"  [ERROR] Сбой батча {batch_num}: {exc}")
-                evaluated_vacancies.extend([self._fallback_vacancy(v) for v in batch])
+                safe_log(
+                    f"  [AI] Батч {batch_num}/{total_batches} готов за "
+                    f"{elapsed_total:.2f}с (распознано {len(ai_results)}/{len(batch)})"
+                )
 
-            # 1.0s delay between batches to respect TPM
+            if on_progress:
+                on_progress(
+                    pct_end,
+                    f"Батч {batch_num}/{total_batches} готов — "
+                    f"проанализировано {len(evaluated_vacancies)}/{total}",
+                )
+
             if start + BATCH_SIZE < total:
                 time.sleep(1.0)
 
@@ -130,11 +180,20 @@ class AiEvaluator:
     def _request_ai_with_retry(self, prompt: str, max_retries: int = 4) -> list[dict]:
         """
         Retries up to max_retries times.
-        For OpenRouter: on 429, escalates through the fallback model chain
-        instead of just waiting, then retries immediately with the new model.
+        Fix #3: uses a LOCAL copy of the fallback chain per call so that
+        exhausting models in one batch does NOT affect the next batch.
+        Fix #6: adds timeout=120 to prevent indefinite hangs.
         """
+        # Fresh local chain per call — never mutates self._fallback_chain_original
+        local_chain: list[str] | None = (
+            list(self._fallback_chain_original)
+            if self._fallback_chain_original is not None
+            else None
+        )
+        current_model = self.model  # local copy; we update self.model only on switch
+
         last_exc: Exception | None = None
-        attempts_on_current_model = 0
+        attempts_on_current = 0
         MAX_ATTEMPTS_PER_MODEL = 2
 
         attempt = 0
@@ -142,55 +201,58 @@ class AiEvaluator:
             attempt += 1
             try:
                 response = self.client.chat.completions.create(
-                    model=self.model,
+                    model=current_model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.05,
                     max_tokens=4096,
+                    timeout=120,  # Fix #6: prevent indefinite hangs
                 )
 
                 raw_content = response.choices[0].message.content or ""
 
-                # Log a preview to help diagnose parse failures
                 preview = raw_content[:200].replace("\n", " ")
                 safe_log(f"    [RAW] Model reply preview: {preview}")
 
                 results = self._extract_results(raw_content)
                 safe_log(f"    [PARSE] Extracted {len(results)} items from response")
-                
+
                 if len(results) == 0:
                     raise ValueError("ParseError: Model returned 0 valid JSON items")
-                    
+
+                # Persist whichever model succeeded
+                self.model = current_model
                 return results
 
             except Exception as exc:
                 last_exc = exc
                 err_str = str(exc)
-                is_rate_limit = "429" in err_str or "rate_limit" in err_str.lower() or "quota" in err_str.lower()
+                is_rate_limit = (
+                    "429" in err_str
+                    or "rate_limit" in err_str.lower()
+                    or "quota" in err_str.lower()
+                )
                 is_parse_error = "ParseError" in err_str
 
-                # Try to switch to the next model in the chain for OpenRouter
-                if (is_rate_limit or is_parse_error) and self._model_fallback_chain:
-                    attempts_on_current_model += 1
-                    if attempts_on_current_model >= MAX_ATTEMPTS_PER_MODEL:
-                        # Remove exhausted model and switch to next
-                        if self.model in self._model_fallback_chain:
-                            self._model_fallback_chain.remove(self.model)
+                if (is_rate_limit or is_parse_error) and local_chain:
+                    attempts_on_current += 1
+                    if attempts_on_current >= MAX_ATTEMPTS_PER_MODEL:
+                        if current_model in local_chain:
+                            local_chain.remove(current_model)
 
-                        if self._model_fallback_chain:
-                            old_model = self.model
-                            self.model = self._model_fallback_chain[0]
-                            attempts_on_current_model = 0
-                            safe_log(f"    [MODEL SWITCH] {old_model} -> {self.model}")
+                        if local_chain:
+                            old_model = current_model
+                            current_model = local_chain[0]
+                            attempts_on_current = 0
+                            safe_log(f"    [MODEL SWITCH] {old_model} -> {current_model}")
+                            # Notify UI and update instance model
+                            self.model = current_model
                             if self.on_model_switch:
-                                self.on_model_switch(old_model, self.model)
-                            # Don't wait, retry immediately with new model
+                                self.on_model_switch(old_model, current_model)
                             continue
                         else:
                             safe_log("    [ERROR] Все резервные модели исчерпаны.")
 
-                # Parse wait time from error message
                 wait_match = re.search(r"try again in ([\d\.]+)s", err_str, re.IGNORECASE)
-                # Don't wait longer than 15 seconds for daily limit errors
                 if wait_match:
                     try:
                         wait = min(float(wait_match.group(1)) + 1.0, 15.0)
@@ -216,8 +278,7 @@ class AiEvaluator:
 
         clean_text = text.strip()
 
-        # ── Step 0: Strip reasoning/thinking tags (Nemotron, Qwen, DeepSeek-R1) ──
-        # Remove <think>...</think> and similar blocks
+        # ── Step 0: Strip reasoning/thinking tags ──
         clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r"<thinking>.*?</thinking>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r"<reasoning>.*?</reasoning>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
@@ -229,12 +290,8 @@ class AiEvaluator:
             if "```" in clean_text:
                 clean_text = clean_text.split("```", 1)[0]
         elif "```" in clean_text:
-            # Try to find the content between first ``` pair
             parts = clean_text.split("```")
-            if len(parts) >= 3:
-                clean_text = parts[1]
-            else:
-                clean_text = clean_text.replace("```", "")
+            clean_text = parts[1] if len(parts) >= 3 else clean_text.replace("```", "")
         clean_text = clean_text.strip()
 
         # ── Step 2: Direct JSON parse ──
@@ -246,10 +303,8 @@ class AiEvaluator:
                 for key in ("results", "data", "vacancies", "items", "output"):
                     if isinstance(parsed.get(key), list):
                         return [p for p in parsed[key] if isinstance(p, dict)]
-                # If single dict with temp_id, wrap it
                 if "temp_id" in parsed:
                     return [parsed]
-                # Any list value
                 for val in parsed.values():
                     if isinstance(val, list) and val:
                         return [p for p in val if isinstance(p, dict)]
@@ -257,7 +312,6 @@ class AiEvaluator:
             pass
 
         # ── Step 3: Find outermost JSON array or object ──
-        # Look for [...] first
         bracket_match = re.search(r"\[[\s\S]*\]", clean_text)
         if bracket_match:
             try:
@@ -267,7 +321,6 @@ class AiEvaluator:
             except Exception:
                 pass
 
-        # Look for {...} with a "results" key
         brace_match = re.search(r"\{[\s\S]*\}", clean_text)
         if brace_match:
             try:
@@ -294,14 +347,15 @@ class AiEvaluator:
 
             try:
                 tid = int(match.group(1))
-                item_dict = {"temp_id": tid}
+                item_dict: dict = {"temp_id": tid}
 
                 for field in ["role_match", "level_match", "tech_match", "experience_match"]:
                     m = re.search(rf'"{field}"\s*:\s*(\d+)', chunk)
                     if m:
                         item_dict[field] = int(m.group(1))
 
-                for field in ["TechStack", "AiSummary", "ExtractedExperience", "detected_role", "detected_level", "critical_reason"]:
+                for field in ["TechStack", "AiSummary", "ExtractedExperience",
+                               "detected_role", "detected_level", "critical_reason"]:
                     m = re.search(rf'"{field}"\s*:\s*"(.*?)"(?:\s*,\s*"|\s*}})', chunk, re.DOTALL)
                     if m:
                         item_dict[field] = m.group(1)
@@ -381,7 +435,7 @@ class AiEvaluator:
     def _merge_results(cls, vacancies: list[Vacancy], ai_results: list[dict]) -> list[Vacancy]:
         result_map: dict[int, dict] = {}
 
-        for idx, res in enumerate(ai_results):
+        for res in ai_results:
             if isinstance(res, dict):
                 tid = res.get("temp_id")
                 if tid is not None:

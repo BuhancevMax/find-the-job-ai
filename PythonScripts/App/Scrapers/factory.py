@@ -1,7 +1,8 @@
 from App.Scrapers.base import BaseScraper
 from App.Scrapers.djinni import DjinniScraper
 from App.Scrapers.workua import WorkUaScraper
-
+from App.Scrapers.dou_ua import DouUaScraper
+from App.Scrapers.robota_ua import RobotaUaScraper
 
 class ScraperFactory:
     """Returns the scraper implementation for a platform."""
@@ -9,6 +10,8 @@ class ScraperFactory:
     _scrapers: dict[str, BaseScraper] = {
         "djinni": DjinniScraper(),
         "workua": WorkUaScraper(),
+        "dou": DouUaScraper(),
+        "robota": RobotaUaScraper(),
     }
 
     @classmethod

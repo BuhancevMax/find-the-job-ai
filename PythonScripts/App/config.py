@@ -13,11 +13,10 @@ DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 # Sourced from user's benchmark test (batch=5).
 # Model is auto-switched on 429 (rate limit exceeded).
 OPENROUTER_MODEL_FALLBACK_CHAIN = [
-    "dots-studio/dots-3-note-preview:free",     # 1st: 6.4s
-    "poolside/laguna-s-2.1:free",               # 2nd: 13.7s
-    "nvidia/nemotron-3-super-120b-a12b:free",   # 3rd: 35.6s
-    "stealth/ox-alpha",                         # 4th: 36.0s
-    "cohere/north-mini-code:free",              # 5th: 75.4s
+    "poolside/laguna-s-2.1:free",               # 1st (was 2nd): 13.7s
+    "nvidia/nemotron-3-super-120b-a12b:free",   # 2nd (was 3rd): 35.6s
+    "stealth/ox-alpha",                         # 3rd (was 4th): 36.0s
+    "cohere/north-mini-code:free",              # 4th (was 5th): 75.4s
 ]
 DEFAULT_OPENROUTER_MODEL = OPENROUTER_MODEL_FALLBACK_CHAIN[0]
 

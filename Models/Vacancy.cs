@@ -11,6 +11,7 @@ public class Vacancy
     public string Company { get; set; } = string.Empty;
     public string SalaryString { get; set; } = string.Empty; // Сырая строка ЗП
     public string Url { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty; // e.g. "Djinni", "Work.ua", "Djinni, DOU"
     public DateTime PublishedDate { get; set; }
         
     // --- Поля, которые будет генерировать ИИ ---

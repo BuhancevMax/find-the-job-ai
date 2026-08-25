@@ -12,27 +12,37 @@ class WorkUaScraper(BaseScraper):
 
     @staticmethod
     def _normalize_keyword(keyword: str) -> str:
-        """Normalize keyword: fix Cyrillic C#, strip extra spaces."""
-        text = keyword.strip()
+        """Normalize keyword: take only the first main skill to avoid confusing the search engine."""
+        # "C#, SQL, .NET" -> "C#"
+        primary = keyword.split(',')[0].strip()
         # Replace Cyrillic 'с'/'С' with Latin 'c'/'C' near # or ++
-        text = re.sub(r'[сС](?=[#\+])', 'C', text)
-        return " ".join(text.split())
+        primary = re.sub(r'[сС](?=[#\+])', 'C', primary)
+        return " ".join(primary.split())
 
     def fetch_jobs(self, keyword: str) -> list[Vacancy]:
         clean_key = self._normalize_keyword(keyword)
 
-        response = requests.get(
-            "https://www.work.ua/jobs/",
-            headers={
-                "User-Agent": SCRAPER_USER_AGENT,
-                "Accept-Language": "uk-UA,uk;q=0.9,ru;q=0.8",
-            },
-            params={"search": clean_key},
-            timeout=DEFAULT_PAGE_TIMEOUT,
+        import cloudscraper
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
         )
 
-        print(f"[Work.ua] URL: {response.url}")
-        response.raise_for_status()
+        try:
+            # Отправляем запрос через cloudscraper для обхода базовой защиты Cloudflare
+            response = scraper.get(
+                "https://www.work.ua/jobs/",
+                params={"search": clean_key},
+                timeout=DEFAULT_PAGE_TIMEOUT,
+            )
+            print(f"[Work.ua] URL: {response.url}")
+            response.raise_for_status()
+        except Exception as e:
+            print(f"[Work.ua] Ошибка сбора: {e}")
+            return []
 
         soup = BeautifulSoup(response.text, "html.parser")
         jobs: list[Vacancy] = []

@@ -1,7 +1,7 @@
 @page "/"
 @rendermode InteractiveServer
-@inject HttpClient Http
-@inject VacancyService VacancyService
+@inject IParsingBackendClient ParsingBackendClient
+@inject IVacancyService VacancyService
 @inject ProtectedLocalStorage BrowserStorage
 @using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
 @using BlazorApp1.Services
@@ -9,257 +9,244 @@
 
 <PageTitle>Парсер Вакансий</PageTitle>
 
-<!-- Основной лэйаут: боковая панель стека + основная часть -->
-<div class="d-flex gap-3" style="align-items: flex-start;">
-
-    <!-- ====== БОКОВАЯ ПАНЕЛЬ: СТЕК ====== -->
-    <div class="card shadow-sm flex-shrink-0" style="width: 220px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto;">
-        <div class="card-body p-2">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="card-title mb-0 fw-bold" style="font-size: 0.85rem;">⚙️ Стек</h6>
-                <button class="btn btn-link btn-sm text-danger p-0" style="font-size: 0.75rem;" @onclick="ClearStack">Сбросить</button>
-            </div>
-
-            @foreach (var group in StackGroups)
-            {
-                <div class="mb-2">
-                    <small class="text-muted fw-bold text-uppercase" style="font-size: 0.68rem; letter-spacing: 0.5px;">@group.Key</small>
-                    @foreach (var tech in group.Value)
-                    {
-                        <div class="form-check" style="margin-bottom: 1px;">
-                            <input class="form-check-input" type="checkbox" id="tech_@tech" 
-                                   checked="@selectedStacks.Contains(tech)"
-                                   @onchange="(e) => ToggleStack(tech, (bool)(e.Value ?? false))"
-                                   style="cursor: pointer;" />
-                            <label class="form-check-label" for="tech_@tech" style="font-size: 0.8rem; cursor: pointer;">
-                                @tech
-                            </label>
-                        </div>
-                    }
-                </div>
-            }
-
-            @if (selectedStacks.Any())
-            {
-                <div class="mt-2 p-2 bg-primary bg-opacity-10 rounded" style="font-size: 0.72rem;">
-                    <strong>Выбрано (@selectedStacks.Count):</strong><br />
-                    @string.Join(", ", selectedStacks)
-                </div>
-            }
-        </div>
-    </div>
-
-    <!-- ====== ПРАВАЯ ЧАСТЬ: основной контент ====== -->
-    <div class="flex-grow-1 min-width-0">
-
-        <h1 class="mb-3">Сбор вакансий</h1>
-
-        <!-- Блок настроек -->
-        <div class="card mb-3 shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title">Настройки ИИ</h5>
-                <div class="input-group mb-3">
-                    <span class="input-group-text">🔑 API Key</span>
-                    <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="API Key (Groq: gsk_... или OpenRouter: sk-or-...)" />
-                </div>
-
-                <!-- ФИЛЬТРЫ -->
-                <div class="row">
-                    <!-- Платформа -->
-                    <div class="col-md-3 mb-2">
-                        <div class="input-group">
-                            <span class="input-group-text">🌐 Сайт</span>
-                            <select class="form-select" @bind="targetPlatform">
-                                <option value="djinni">Djinni.co</option>
-                                <option value="workua">Work.ua</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Язык ИИ -->
-                    <div class="col-md-2 mb-2">
-                        <div class="input-group">
-                            <span class="input-group-text">🌍 Язык</span>
-                            <select class="form-select" @bind="targetLanguage">
-                                <option value="Українська">UA</option>
-                                <option value="English">EN</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Должность -->
-                    <div class="col-md-4 mb-2">
-                        <div class="input-group">
-                            <span class="input-group-text">💼 Роль</span>
-                            <select class="form-select" @bind="targetRole">
-                                <option value="Trainee/Junior Developer">Trainee/Junior</option>
-                                <option value="Middle Developer">Middle</option>
-                                <option value="Senior Developer">Senior</option>
-                                <option value="Lead/Architect">Lead/Architect</option>
-                                <option value="Fullstack Developer">Fullstack</option>
-                                <option value="Любой разработчик">Любой разработчик</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Опыт -->
-                    <div class="col-md-3 mb-2">
-                        <div class="input-group">
-                            <span class="input-group-text">⏳ Опыт</span>
-                            <select class="form-select" @bind="targetExp">
-                                <option value="Без коммерческого опыта (Студент)">Без коммерческого опыта</option>
-                                <option value="Менее 1 года">Менее 1 года</option>
-                                <option value="1-3 года">1-3 года</option>
-                                <option value="Более 3 лет">Более 3 лет</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                @if (!selectedStacks.Any())
-                {
-                    <div class="alert alert-warning py-1 px-2 mb-0 mt-1" style="font-size: 0.82rem;">
-                        ⚠️ Не выбраны технологии. Выберите хотя бы одну в левой панели «Стек».
-                    </div>
-                }
-            </div>
-        </div>
-
-        <!-- Панель управления -->
-        <div class="d-flex justify-content-between mb-3 align-items-center">
-            <div>
-                <button class="btn btn-primary" @onclick="StartParsing" disabled="@IsButtonDisabled">
-                    @if (isLoading)
-                    {
-                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                        <span> Обработка...</span>
-                    }
-                    else
-                    {
-                        <span>🌐 Свежий парсинг (@(targetPlatform == "djinni" ? "Djinni" : "Work.ua"))</span>
-                    }
-                </button>
-                <button class="btn btn-outline-secondary ms-2" @onclick="LoadFromDb" disabled="@isLoading">
-                    🗄 Обновить из БД
-                </button>
-                <button class="btn btn-outline-danger ms-2" @onclick="ClearCache" disabled="@isLoading">
-                    🗑 Очистить кэш
-                </button>
-            </div>
-
+<!-- Glassmorphism Filter Header -->
+<div class="glass-panel">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0 fw-bold" style="color: var(--color-primary);">AI Job Parser</h3>
+        <div class="d-flex gap-2">
+            <!-- Save/Cache controls -->
+            <button class="btn btn-outline-secondary" @onclick="LoadFromDb" disabled="@isLoading">🗄 Обновить</button>
+            <button class="btn btn-outline-danger" @onclick="ClearCache" disabled="@isLoading">🗑 Очистить кэш</button>
             <div class="btn-group" role="group">
                 <button type="button" class="btn @(showOnlySaved ? "btn-outline-primary" : "btn-primary")" @onclick="() => SetView(false)">Все (Кэш)</button>
                 <button type="button" class="btn @(showOnlySaved ? "btn-primary" : "btn-outline-primary")" @onclick="() => SetView(true)">⭐ Избранное</button>
             </div>
         </div>
+    </div>
 
-        <!-- Индикатор прогресса и таймер ожидания -->
-        @if (isLoading)
+    <!-- API & Search Button Row -->
+    <div class="row mb-3 align-items-end">
+        <div class="col-md-9">
+            <label class="filter-label">🔑 API Key (Groq / OpenRouter)</label>
+            <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="gsk_... или sk-or-..." />
+        </div>
+        <div class="col-md-3">
+             <button class="btn btn-primary w-100" @onclick="StartParsing" disabled="@IsButtonDisabled" style="height: 38px;">
+                 @if (isLoading)
+                 {
+                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                     <span> Обработка...</span>
+                 }
+                 else
+                 {
+                     <span>🌐 Свежий парсинг</span>
+                 }
+             </button>
+        </div>
+    </div>
+
+    <!-- Filters Row -->
+    <div class="row g-2 mb-3">
+        <div class="col-md-3">
+            <label class="filter-label">💼 Роль</label>
+            <select class="form-select" @bind="targetRole">
+                <option value="Trainee/Junior Developer">Trainee/Junior</option>
+                <option value="Middle Developer">Middle</option>
+                <option value="Senior Developer">Senior</option>
+                <option value="Lead/Architect">Lead/Architect</option>
+                <option value="Fullstack Developer">Fullstack</option>
+                <option value="Любой разработчик">Любой разработчик</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="filter-label">⏳ Опыт</label>
+            <select class="form-select" @bind="targetExp">
+                <option value="Без коммерческого опыта (Студент)">Без коммерческого опыта</option>
+                <option value="Менее 1 года">Менее 1 года</option>
+                <option value="1-3 года">1-3 года</option>
+                <option value="Более 3 лет">Более 3 лет</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="filter-label">🌍 Язык</label>
+            <select class="form-select" @bind="targetLanguage">
+                <option value="Українська">UA</option>
+                <option value="English">EN</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="filter-label">🏢 Формат</label>
+            <select class="form-select" @bind="workFormat">
+                <option value="">Любой</option>
+                <option value="Remote">Remote</option>
+                <option value="Office">Office</option>
+                <option value="Hybrid">Hybrid</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="filter-label">💵 Ожидаемая ЗП</label>
+            <input type="text" class="form-control" @bind="salaryExpectations" placeholder="Напр. $500" />
+        </div>
+    </div>
+
+    <!-- Sites Checkboxes -->
+    <div class="mb-3">
+        <label class="filter-label d-inline me-2">🌐 Сайты:</label>
+        @foreach (var platform in new[] { "djinni", "workua", "robota", "dou" })
         {
-            <div class="card mb-3 border-primary shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="card-title text-primary mb-0 fw-bold">
-                            <span class="spinner-border spinner-border-sm text-primary me-2" role="status"></span>
-                            @loadingStatusText
-                        </h6>
-                        <span class="badge bg-primary fs-6">
-                            ⏱ @(elapsedSeconds)с
-                        </span>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="@platform" checked="@selectedPlatforms.Contains(platform)" @onchange='(e) => TogglePlatform(platform, e)' />
+                <label class="form-check-label text-capitalize" for="@platform">@platform</label>
+            </div>
+        }
+    </div>
+
+    <!-- Tech Stack (Pills) -->
+    <div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="filter-label mb-0">⚙️ Стек технологий</label>
+            @if (selectedStacks.Any())
+            {
+                <button class="btn btn-link btn-sm text-danger p-0 text-decoration-none" style="font-size: 0.8rem;" @onclick="ClearStack">Сбросить выбор</button>
+            }
+        </div>
+        <div class="d-flex flex-wrap gap-2" style="max-height: 120px; overflow-y: auto; padding-right: 10px;">
+            @foreach (var group in StackGroups)
+            {
+                @foreach (var tech in group.Value)
+                {
+                    bool isChecked = selectedStacks.Contains(tech);
+                    <div class="btn @(isChecked ? "btn-primary" : "btn-outline-secondary") btn-sm rounded-pill border-0" 
+                         style="cursor: pointer; padding: 0.25rem 0.75rem; font-size: 0.8rem; background-color: @(isChecked ? "var(--color-primary)" : "white"); color: @(isChecked ? "white" : "var(--color-foreground)"); box-shadow: 0 1px 2px rgba(0,0,0,0.05);"
+                         @onclick="() => ToggleStack(tech, !isChecked)">
+                        @tech
                     </div>
-                    <div class="progress" style="height: 24px; border-radius: 6px; overflow: hidden; background-color: #e9ecef;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated @(progressPercent >= 100 ? "bg-success" : "bg-primary") fw-bold"
-                             role="progressbar"
-                             style="width: @(progressPercent)%; transition: width 0.8s ease-in-out;"
-                             aria-valuenow="@progressPercent"
-                             aria-valuemin="0"
-                             aria-valuemax="100">
-                            @(progressPercent)%
+                }
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Progress / Loading -->
+@if (isLoading)
+{
+    <div class="glass-panel" style="margin-bottom: 2rem;">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 fw-bold" style="color: var(--color-primary);">
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                @loadingStatusText
+            </h6>
+            <span class="badge bg-primary fs-6 rounded-pill" style="font-weight: 500;">⏱ @(elapsedSeconds)с</span>
+        </div>
+        <div class="progress" style="height: 10px; border-radius: 5px; background-color: var(--color-border);">
+            <div class="progress-bar progress-bar-striped progress-bar-animated @(progressPercent >= 100 ? "bg-success" : "bg-primary")"
+                 role="progressbar" style="width: @(progressPercent)%;" aria-valuenow="@progressPercent" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <small class="text-muted mt-2 d-block">💡 ИИ анализирует соответствие стека, уровня и опыта для всех найденных вакансий...</small>
+    </div>
+}
+
+<!-- Results (Job Cards) -->
+@if (displayVacancies != null && displayVacancies.Any())
+{
+    <div class="d-flex justify-content-between align-items-center mb-3 px-2">
+        <h5 class="fw-bold mb-0">Найдено вакансий: @displayVacancies.Count</h5>
+        
+        <!-- Сортировка -->
+        <div class="d-flex align-items-center gap-2">
+            <span class="filter-label mb-0" style="margin-bottom:0;">Сортировать по:</span>
+            <div class="btn-group btn-group-sm">
+                <button class="btn @(currentSortColumn == "AiMatchScore" ? "btn-secondary" : "btn-outline-secondary")" @onclick='() => SortBy("AiMatchScore")'>Оценка @(currentSortColumn == "AiMatchScore" ? (isAscending ? "▲" : "▼") : "")</button>
+                <button class="btn @(currentSortColumn == "RequiredExperience" ? "btn-secondary" : "btn-outline-secondary")" @onclick='() => SortBy("RequiredExperience")'>Опыт @(currentSortColumn == "RequiredExperience" ? (isAscending ? "▲" : "▼") : "")</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="job-list">
+        @foreach (var vac in displayVacancies)
+        {
+            var isTopMatch = vac.AiMatchScore >= 90;
+            var isExpanded = expandedSummaries.Contains(vac.Id);
+            
+            <div class="job-card @(isTopMatch ? "top-match-glow" : "")">
+                <div class="d-flex justify-content-between align-items-start">
+                    
+                    <div class="flex-grow-1 me-3">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <span class="badge bg-secondary text-uppercase" style="font-size:0.65rem; letter-spacing:0.5px; border-radius: 4px;">@vac.Source</span>
+                            <span class="text-muted" style="font-size: 0.8rem;">Опыт: <strong style="color: var(--color-foreground);">@(string.IsNullOrWhiteSpace(vac.RequiredExperience) ? "Смотреть в описании" : vac.RequiredExperience)</strong></span>
+                        </div>
+                        
+                        <a href="@vac.Url" target="_blank" class="text-decoration-none fw-bold fs-5 mb-1 d-block" style="color: var(--color-foreground); line-height: 1.3;">
+                            @vac.Title
+                        </a>
+                        
+                        <div class="mb-3" style="font-size: 0.85rem;">
+                            <strong style="color: var(--color-muted-foreground);">Стек (ИИ):</strong> <span style="font-weight: 500; color: var(--color-primary);">@vac.TechStack</span>
+                        </div>
+                        
+                        <div class="ai-summary @(isExpanded ? "" : "truncated")" @onclick="() => ToggleSummary(vac.Id)">
+                            <strong>🤖 Заключение ИИ:</strong> @vac.AiSummary
+                        </div>
+                        @if (!isExpanded && !string.IsNullOrEmpty(vac.AiSummary) && vac.AiSummary.Length > 100)
+                        {
+                            <button class="btn-read-more" @onclick="() => ToggleSummary(vac.Id)">Читать далее</button>
+                        }
+                    </div>
+
+                    <div class="d-flex flex-column align-items-center flex-shrink-0" style="width: 80px;">
+                        <!-- Circular AI Score -->
+                        <svg viewBox="0 0 36 36" class="circular-chart @(vac.AiMatchScore > 70 ? "score-high" : (vac.AiMatchScore > 40 ? "score-med" : "score-low"))">
+                          <path class="circle-bg"
+                            d="M18 2.0845
+                              a 15.9155 15.9155 0 0 1 0 31.831
+                              a 15.9155 15.9155 0 0 1 0 -31.831"
+                          />
+                          <path class="circle"
+                            stroke-dasharray="@(vac.AiMatchScore), 100"
+                            d="M18 2.0845
+                              a 15.9155 15.9155 0 0 1 0 31.831
+                              a 15.9155 15.9155 0 0 1 0 -31.831"
+                          />
+                          <text x="18" y="20.35" class="percentage">@vac.AiMatchScore</text>
+                        </svg>
+                        
+                        <!-- Action buttons -->
+                        <div class="d-flex mt-3 gap-2">
+                            <button class="btn btn-sm @(vac.IsSaved ? "btn-warning" : "btn-light") rounded-circle" @onclick="() => ToggleSave(vac)" style="width: 32px; height: 32px; padding: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" title="В избранное">
+                                @(vac.IsSaved ? "⭐" : "☆")
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger rounded-circle" @onclick="() => RejectVacancy(vac)" style="width: 32px; height: 32px; padding: 0;" title="Скрыть навсегда">
+                                🗑
+                            </button>
                         </div>
                     </div>
-                    <small class="text-muted mt-2 d-block">
-                        💡 ИИ анализирует соответствие стека, уровня и опыта для всех найденных вакансий...
-                    </small>
                 </div>
             </div>
         }
-
-        <!-- Предупреждение о смене модели -->
-        @if (!string.IsNullOrEmpty(modelSwitchWarning))
-        {
-            <div class="alert alert-warning py-2 px-3 mb-3">
-                @modelSwitchWarning
-            </div>
-        }
-
-        @if (!string.IsNullOrEmpty(errorMessage))
-        {
-            <div class="alert alert-danger mt-2">@errorMessage</div>
-        }
-
-        <!-- Таблица с результатами -->
-        @if (displayVacancies != null && displayVacancies.Any())
-        {
-            <table class="table table-hover table-bordered shadow-sm align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th style="width: 50px;" class="text-center">#</th>
-                        <th style="cursor: pointer;" @onclick='() => SortBy("Title")'>
-                            Название @GetSortIcon("Title")
-                        </th>
-                        <th style="cursor: pointer;" @onclick='() => SortBy("RequiredExperience")'>
-                            Опыт @GetSortIcon("RequiredExperience")
-                        </th>
-                        <th>Стек (ИИ)</th>
-                        <th>Заключение ИИ</th>
-                        <th style="cursor: pointer; width: 100px;" class="text-center" @onclick='() => SortBy("AiMatchScore")'>
-                            Оценка @GetSortIcon("AiMatchScore")
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var vac in displayVacancies)
-                    {
-                        <tr>
-                            <td class="text-center text-nowrap">
-                                <button class="btn btn-sm @(vac.IsSaved ? "btn-warning" : "btn-light")" @onclick="() => ToggleSave(vac)" style="width: 35px;" title="В избранное">
-                                    @(vac.IsSaved ? "⭐" : "☆")
-                                </button>
-                                <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => RejectVacancy(vac)" style="width: 35px;" title="Скрыть навсегда">
-                                    🗑
-                                </button>
-                            </td>
-                            <td><a href="@vac.Url" target="_blank" class="text-decoration-none fw-bold">@vac.Title</a></td>
-                            <td>@vac.RequiredExperience</td>
-                            <td>@vac.TechStack</td>
-                            <td>@vac.AiSummary</td>
-                            <td class="text-center">
-                                <span class="badge rounded-pill @(vac.AiMatchScore > 70 ? "bg-success" : (vac.AiMatchScore > 40 ? "bg-warning text-dark" : "bg-danger"))" style="font-size: 1rem;">
-                                    @vac.AiMatchScore
-                                </span>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-        else if (hasLoaded)
-        {
-            <div class="alert alert-info">В базе данных пока пусто. Запустите свежий парсинг.</div>
-        }
-
-    </div><!-- /right column -->
-</div><!-- /main flex -->
+    </div>
+}
+else if (hasLoaded)
+{
+    <div class="glass-panel text-center p-5">
+        <h4 class="text-muted fw-bold mb-2">Здесь пока пусто</h4>
+        <p class="text-muted mb-0">Запустите свежий парсинг, чтобы ИИ нашел лучшие вакансии для вас.</p>
+    </div>
+}
 
 @code {
     // ---------------------------------------------------------------
     // State
     // ---------------------------------------------------------------
     private string targetLanguage = "Українська";
-    private string targetPlatform = "djinni";
+    private List<string> selectedPlatforms = new() { "djinni", "workua" };
     private string apiKey = "";
-    private string targetRole = "";
-    private string targetExp = "";
+    private string targetRole = "Trainee/Junior Developer";
+    private string targetExp = "Без коммерческого опыта (Студент)";
+    private string salaryExpectations = "";
+    private string workFormat = "";
+    private string englishLevel = "";
+    private string employmentType = "";
     private bool isLoading = false;
     private bool hasLoaded = false;
     private string errorMessage = "";
@@ -271,10 +258,30 @@
     // Stack checkboxes
     private HashSet<string> selectedStacks = new();
 
+    // Summary expansion state
+    private HashSet<int> expandedSummaries = new();
+
+    private void ToggleSummary(int vacancyId)
+    {
+        if (expandedSummaries.Contains(vacancyId))
+            expandedSummaries.Remove(vacancyId);
+        else
+            expandedSummaries.Add(vacancyId);
+    }
+
     /// <summary>Keyword sent to the scraper (comma-joined selected stacks).</summary>
     private string SearchKeyword => string.Join(", ", selectedStacks);
 
-    private bool IsButtonDisabled => isLoading || string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 10 || !selectedStacks.Any();
+    private bool IsButtonDisabled => isLoading || string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 10 || !selectedStacks.Any() || !selectedPlatforms.Any();
+
+    private void TogglePlatform(string platform, ChangeEventArgs e)
+    {
+        var isChecked = (bool)(e.Value ?? false);
+        if (isChecked && !selectedPlatforms.Contains(platform))
+            selectedPlatforms.Add(platform);
+        else if (!isChecked)
+            selectedPlatforms.Remove(platform);
+    }
 
     // ---------------------------------------------------------------
     // Stack groups definition
@@ -456,7 +463,7 @@
         modelSwitchWarning = "";
         elapsedSeconds = 0;
         progressPercent = 5;
-        loadingStatusText = $"🔍 Поиск и сбор вакансий на {(targetPlatform == "djinni" ? "Djinni.co" : "Work.ua")}...";
+        loadingStatusText = $"🔍 Поиск и сбор вакансий на {string.Join(", ", selectedPlatforms.Select(p => p.ToUpper()))}...";
 
         loadingCts = new System.Threading.CancellationTokenSource();
         var ct = loadingCts.Token;
@@ -484,70 +491,47 @@
             await BrowserStorage.SetAsync("savedRole", targetRole);
             await BrowserStorage.SetAsync("savedExp", targetExp);
 
-            // Build keyword: join selected stacks (primary first, add "OR" semantics via Python)
-            string keyword = Uri.EscapeDataString(SearchKeyword);
-            string role = Uri.EscapeDataString(targetRole);
-            string exp = Uri.EscapeDataString(targetExp);
-            string key = Uri.EscapeDataString(apiKey);
-            string lang = Uri.EscapeDataString(targetLanguage);
-            string requestUrl = $"http://127.0.0.1:8000/parse-stream/{targetPlatform}?keyword={keyword}&api_key={key}&target_role={role}&target_exp={exp}&language={lang}";
-
-            using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.EnsureSuccessStatusCode();
-
-            using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8, false, 1);
-
-            while (!reader.EndOfStream && !ct.IsCancellationRequested)
+            await foreach (var streamEvent in ParsingBackendClient.ParseVacanciesStreamAsync(
+                selectedPlatforms, apiKey, SearchKeyword, targetRole, targetExp, targetLanguage,
+                salaryExpectations, workFormat, englishLevel, employmentType, ct))
             {
-                var line = await reader.ReadLineAsync(ct);
-                if (string.IsNullOrWhiteSpace(line)) continue;
-
-                try
+                if (streamEvent.Type == "progress")
                 {
-                    var streamEvent = System.Text.Json.JsonSerializer.Deserialize<StreamEventMessage>(line,
-                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-                    if (streamEvent == null) continue;
-
-                    if (streamEvent.type == "progress")
-                    {
-                        if (streamEvent.percent >= 0)
-                            progressPercent = streamEvent.percent;
-                        loadingStatusText = streamEvent.message;
-                        await InvokeAsync(StateHasChanged);
-                    }
-                    else if (streamEvent.type == "model_switch")
-                    {
-                        // Show warning without touching progress bar
-                        modelSwitchWarning = streamEvent.message;
-                        await InvokeAsync(StateHasChanged);
-                    }
-                    else if (streamEvent.type == "complete")
-                    {
-                        progressPercent = 100;
-                        loadingStatusText = "✅ Анализ завершён!";
-                        await InvokeAsync(StateHasChanged);
-
-                        await Task.Delay(700, ct);
-
-                        if (streamEvent.status == "success" && streamEvent.data != null && streamEvent.data.Any())
-                        {
-                            await VacancyService.SaveNewVacanciesAsync(streamEvent.data);
-                            showOnlySaved = false;
-                            await LoadFromDb();
-                        }
-                        else
-                        {
-                            errorMessage = streamEvent.message ?? "Парсер вернул 0 вакансий.";
-                        }
-                        break;
-                    }
+                    if (streamEvent.Percent >= 0)
+                        progressPercent = streamEvent.Percent;
+                    loadingStatusText = streamEvent.Message;
+                    await InvokeAsync(StateHasChanged);
                 }
-                catch (System.Text.Json.JsonException)
+                else if (streamEvent.Type == "model_switch")
                 {
-                    // Ignore non-json lines
+                    // Show warning without touching progress bar
+                    modelSwitchWarning = streamEvent.Message;
+                    await InvokeAsync(StateHasChanged);
+                }
+                else if (streamEvent.Type == "complete")
+                {
+                    progressPercent = 100;
+                    loadingStatusText = "✅ Анализ завершён!";
+                    await InvokeAsync(StateHasChanged);
+
+                    await Task.Delay(700, ct);
+
+                    if (streamEvent.Status == "success" && streamEvent.Data != null && streamEvent.Data.Any())
+                    {
+                        await VacancyService.SaveNewVacanciesAsync(streamEvent.Data, ct);
+                        showOnlySaved = false;
+                        
+                        // Сбросить сортировку на "по Оценке (убывание)" принудительно
+                        currentSortColumn = "AiMatchScore";
+                        isAscending = false;
+                        
+                        await LoadFromDb();
+                    }
+                    else
+                    {
+                        errorMessage = streamEvent.Message ?? "Парсер вернул 0 вакансий.";
+                    }
+                    break;
                 }
             }
         }
@@ -586,24 +570,5 @@
         return number;
     }
 
-    // ---------------------------------------------------------------
-    // DTOs for streaming
-    // ---------------------------------------------------------------
-    public class StreamEventMessage
-    {
-        public string type { get; set; } = "";
-        public int percent { get; set; } = -1;
-        public string message { get; set; } = "";
-        public string status { get; set; } = "";
-        public int count { get; set; }
-        public List<BlazorApp1.Models.Vacancy> data { get; set; } = new();
-    }
 
-    public class PythonApiResponse
-    {
-        public string status { get; set; } = "";
-        public string message { get; set; } = "";
-        public int count { get; set; }
-        public List<BlazorApp1.Models.Vacancy> data { get; set; } = new();
-    }
 }

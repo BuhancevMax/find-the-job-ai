@@ -6,6 +6,7 @@ class Vacancy(TypedDict, total=False):
     Title: str
     Company: str
     Url: str
+    Source: str
     RequiredExperience: str
     DescriptionSnippet: str
     TechStack: str
@@ -26,3 +27,17 @@ class AIEvaluation(TypedDict):
     TechStack: str
     AiSummary: str
     ExtractedExperience: str
+
+
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class JobCriteria:
+    target_role: str
+    target_exp: str
+    target_stack: str
+    language: str
+    salary_expectations: str = ""
+    work_format: str = ""
+    english_level: str = ""
+    employment_type: str = ""

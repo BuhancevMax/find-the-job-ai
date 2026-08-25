@@ -3,4 +3,4 @@ uvicorn[standard]
 requests
 beautifulsoup4
 openai
-groq
+cloudscraper
