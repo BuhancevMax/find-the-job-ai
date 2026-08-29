@@ -7,75 +7,104 @@
 @using BlazorApp1.Services
 @using System.Linq
 
-<PageTitle>Парсер Вакансий</PageTitle>
+<PageTitle>Find the Job AI</PageTitle>
 
-<!-- Glassmorphism Filter Header -->
-<div class="glass-panel">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3 class="mb-0 fw-bold" style="color: var(--color-primary);">AI Job Parser</h3>
-        <div class="d-flex gap-2">
-            <!-- Save/Cache controls -->
-            <button class="btn btn-outline-secondary" @onclick="LoadFromDb" disabled="@isLoading">🗄 Обновить</button>
-            <button class="btn btn-outline-danger" @onclick="ClearCache" disabled="@isLoading">🗑 Очистить кэш</button>
-            <div class="btn-group" role="group">
-                <button type="button" class="btn @(showOnlySaved ? "btn-outline-primary" : "btn-primary")" @onclick="() => SetView(false)">Все (Кэш)</button>
-                <button type="button" class="btn @(showOnlySaved ? "btn-primary" : "btn-outline-primary")" @onclick="() => SetView(true)">⭐ Избранное</button>
+<!-- ============================================================
+     HERO SECTION
+     ============================================================ -->
+<div class="hero-section">
+    <div class="hero-content">
+        <h1 class="hero-title">Find the Job <span>AI</span></h1>
+        <p class="hero-subtitle">ИИ анализирует вакансии по всему UA-рынку и находит лучшее совпадение для вас</p>
+    </div>
+
+    <!-- Magnifier scene — signature element -->
+    <div class="magnifier-scene" aria-hidden="true">
+        <!-- 4x3 Icon grid -->
+        <div class="icon-grid">
+            <div class="icon-cell icon-cell-csharp">C#</div>
+            <div class="icon-cell icon-cell-dotnet">.NET</div>
+            <div class="icon-cell icon-cell-js">JS</div>
+            <div class="icon-cell icon-cell-ts">TS</div>
+            <div class="icon-cell icon-cell-go">Go</div>
+            <div class="icon-cell icon-cell-py">Py</div>
+            <div class="icon-cell icon-cell-sql">SQL</div>
+            <div class="icon-cell icon-cell-react">React</div>
+            <div class="icon-cell icon-cell-docker">Docker</div>
+            <div class="icon-cell icon-cell-k8s">K8s</div>
+            <div class="icon-cell icon-cell-rust">Rust</div>
+            <div class="icon-cell icon-cell-aws">AWS</div>
+        </div>
+
+        <!-- Realistic SVG magnifying glass with metallic rim & glare -->
+        <div class="magnifier-glass-wrap">
+            <svg class="magnifier-svg" viewBox="0 0 100 100" fill="none">
+                <!-- Drop shadow -->
+                <circle cx="40" cy="40" r="32" fill="rgba(0, 0, 0, 0.04)" />
+                <!-- Ergonomic dark handle -->
+                <path d="M63 63 L88 88" stroke="#1E293B" stroke-width="9" stroke-linecap="round" />
+                <path d="M63 63 L88 88" stroke="#475569" stroke-width="5" stroke-linecap="round" />
+                <path d="M63 63 L70 70" stroke="#059669" stroke-width="7" stroke-linecap="round" />
+                <!-- Metallic emerald rim -->
+                <circle cx="40" cy="40" r="32" stroke="#059669" stroke-width="4.5" fill="rgba(240, 253, 244, 0.12)" />
+                <!-- Specular white highlight ring -->
+                <circle cx="40" cy="40" r="29.5" stroke="rgba(255, 255, 255, 0.5)" stroke-width="1.5" fill="none" />
+                <!-- Glass glare arc reflection -->
+                <path d="M19 32 A22 22 0 0 1 46 18" stroke="rgba(255, 255, 255, 0.85)" stroke-width="2.5" stroke-linecap="round" />
+            </svg>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     FILTER PANEL
+     ============================================================ -->
+<div class="filter-panel">
+    <!-- Row 1: API Key + Search -->
+    <div class="filter-row mb-3" style="gap: 0.75rem; align-items: flex-end;">
+        <div class="filter-group" style="flex: 1; min-width: 220px;">
+            <label class="filter-label">API Key</label>
+            <input type="password" class="form-control" style="width: 100%;" 
+                   @bind="apiKey" @bind:event="oninput" placeholder="gsk_… или sk-or-v1-…" />
+            <div class="api-hint">
+                Groq: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>
+                &nbsp;&middot;&nbsp;
+                OpenRouter: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
             </div>
         </div>
-    </div>
 
-    <!-- API & Search Button Row -->
-    <div class="row mb-3 align-items-end">
-        <div class="col-md-9">
-            <label class="filter-label">🔑 API Key (Groq / OpenRouter)</label>
-            <input type="password" class="form-control" @bind="apiKey" @bind:event="oninput" placeholder="gsk_... или sk-or-..." />
-        </div>
-        <div class="col-md-3">
-             <button class="btn btn-primary w-100" @onclick="StartParsing" disabled="@IsButtonDisabled" style="height: 38px;">
-                 @if (isLoading)
-                 {
-                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                     <span> Обработка...</span>
-                 }
-                 else
-                 {
-                     <span>🌐 Свежий парсинг</span>
-                 }
-             </button>
-        </div>
-    </div>
-
-    <!-- Filters Row -->
-    <div class="row g-2 mb-3">
-        <div class="col-md-3">
-            <label class="filter-label">💼 Роль</label>
+        <div class="filter-group" style="width: 180px;">
+            <label class="filter-label">Роль</label>
             <select class="form-select" @bind="targetRole">
-                <option value="Trainee/Junior Developer">Trainee/Junior</option>
+                <option value="Trainee/Junior Developer">Trainee / Junior</option>
                 <option value="Middle Developer">Middle</option>
                 <option value="Senior Developer">Senior</option>
-                <option value="Lead/Architect">Lead/Architect</option>
+                <option value="Lead/Architect">Lead / Architect</option>
                 <option value="Fullstack Developer">Fullstack</option>
-                <option value="Любой разработчик">Любой разработчик</option>
+                <option value="Любой разработчик">Любой</option>
             </select>
         </div>
-        <div class="col-md-2">
-            <label class="filter-label">⏳ Опыт</label>
+
+        <div class="filter-group" style="width: 165px;">
+            <label class="filter-label">Опыт</label>
             <select class="form-select" @bind="targetExp">
-                <option value="Без коммерческого опыта (Студент)">Без коммерческого опыта</option>
+                <option value="Без коммерческого опыта (Студент)">Без опыта</option>
                 <option value="Менее 1 года">Менее 1 года</option>
-                <option value="1-3 года">1-3 года</option>
+                <option value="1-3 года">1–3 года</option>
                 <option value="Более 3 лет">Более 3 лет</option>
             </select>
         </div>
-        <div class="col-md-2">
-            <label class="filter-label">🌍 Язык</label>
+
+        <div class="filter-group" style="width: 80px;">
+            <label class="filter-label">Язык AI</label>
             <select class="form-select" @bind="targetLanguage">
                 <option value="Українська">UA</option>
                 <option value="English">EN</option>
             </select>
         </div>
-        <div class="col-md-2">
-            <label class="filter-label">🏢 Формат</label>
+
+        <div class="filter-group" style="width: 120px;">
+            <label class="filter-label">Формат</label>
             <select class="form-select" @bind="workFormat">
                 <option value="">Любой</option>
                 <option value="Remote">Remote</option>
@@ -83,163 +112,560 @@
                 <option value="Hybrid">Hybrid</option>
             </select>
         </div>
-        <div class="col-md-3">
-            <label class="filter-label">💵 Ожидаемая ЗП</label>
-            <input type="text" class="form-control" @bind="salaryExpectations" placeholder="Напр. $500" />
+
+        <div class="filter-group" style="width: 115px;">
+            <label class="filter-label">Зарплата</label>
+            <input type="text" class="form-control" @bind="salaryExpectations" placeholder="$ от…" />
         </div>
-    </div>
 
-    <!-- Sites Checkboxes -->
-    <div class="mb-3">
-        <label class="filter-label d-inline me-2">🌐 Сайты:</label>
-        @foreach (var platform in new[] { "djinni", "workua", "robota", "dou" })
-        {
-            <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="@platform" checked="@selectedPlatforms.Contains(platform)" @onchange='(e) => TogglePlatform(platform, e)' />
-                <label class="form-check-label text-capitalize" for="@platform">@platform</label>
-            </div>
-        }
-    </div>
-
-    <!-- Tech Stack (Pills) -->
-    <div>
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <label class="filter-label mb-0">⚙️ Стек технологий</label>
-            @if (selectedStacks.Any())
+        <button class="btn btn-search" @onclick="StartParsing" disabled="@IsButtonDisabled" style="align-self: flex-end; height: 36px;">
+            @if (isLoading)
             {
-                <button class="btn btn-link btn-sm text-danger p-0 text-decoration-none" style="font-size: 0.8rem;" @onclick="ClearStack">Сбросить выбор</button>
+                <span class="spinner" role="status"></span>
+                <span>Поиск...</span>
+            }
+            else
+            {
+                <!-- Search icon -->
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <span>Найти вакансии</span>
+            }
+        </button>
+    </div>
+
+    <!-- Row 2: Platforms + Actions -->
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div class="platform-checkboxes">
+            <span class="filter-label me-1" style="font-size: 0.68rem;">Платформы:</span>
+            @foreach (var p in Platforms)
+            {
+                bool active = selectedPlatforms.Contains(p.Key);
+                <div class="platform-pill @(active ? "active-" + p.Key : "")" @onclick="() => TogglePlatformDirect(p.Key)">
+                    <img src="https://www.google.com/s2/favicons?domain=@p.Domain&sz=16" alt="@p.Name" />
+                    @p.Name
+                </div>
+            }
+            @if (selectedPlatforms.Count > 2)
+            {
+                <span class="platform-notice-pill ms-2" title="Поиск на @selectedPlatforms.Count сайтах">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                    </svg>
+                    Выбрано @selectedPlatforms.Count платформы — поиск и детальный ИИ-анализ могут занять 2–4 мин.
+                </span>
             }
         </div>
-        <div class="d-flex flex-wrap gap-2" style="max-height: 120px; overflow-y: auto; padding-right: 10px;">
+
+        <div class="d-flex align-items-center gap-1">
+            <button class="btn btn-ghost btn-sm" @onclick="ClearCache" disabled="@isLoading" title="Очистить кэш базы">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                </svg>
+                Очистить кэш
+            </button>
+            <button class="btn btn-ghost btn-sm" @onclick="() => showBlacklist = true" title="Чёрный список">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+                Чёрный список @(blacklistVacancies.Any() ? $"({blacklistVacancies.Count})" : "")
+            </button>
+        </div>
+    </div>
+
+    <!-- Stack Section -->
+    <div class="stack-section">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="filter-label">Стек технологий @(selectedStacks.Any() ? $"· {selectedStacks.Count} выбрано" : "")</span>
+            @if (selectedStacks.Any())
+            {
+                <button class="btn-expand" @onclick="ClearStack">Сбросить</button>
+            }
+        </div>
+        <div>
             @foreach (var group in StackGroups)
             {
-                @foreach (var tech in group.Value)
-                {
-                    bool isChecked = selectedStacks.Contains(tech);
-                    <div class="btn @(isChecked ? "btn-primary" : "btn-outline-secondary") btn-sm rounded-pill border-0" 
-                         style="cursor: pointer; padding: 0.25rem 0.75rem; font-size: 0.8rem; background-color: @(isChecked ? "var(--color-primary)" : "white"); color: @(isChecked ? "white" : "var(--color-foreground)"); box-shadow: 0 1px 2px rgba(0,0,0,0.05);"
-                         @onclick="() => ToggleStack(tech, !isChecked)">
-                        @tech
+                bool groupOpen = openStackGroups.Contains(group.Key);
+                int groupSelected = group.Value.Count(t => selectedStacks.Contains(t));
+                <div class="stack-group">
+                    <div class="stack-group-header" @onclick="() => ToggleStackGroup(group.Key)">
+                        <span class="stack-group-label">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.15s; transform: rotate(@(groupOpen ? "90deg" : "0deg"))">
+                                <polyline points="9 18 15 12 9 6"/>
+                            </svg>
+                            &nbsp;@group.Key
+                        </span>
+                        @if (groupSelected > 0)
+                        {
+                            <span class="stack-group-count">@groupSelected</span>
+                        }
                     </div>
-                }
+                    @if (groupOpen)
+                    {
+                        <div class="stack-tags">
+                            @foreach (var tech in group.Value)
+                            {
+                                bool sel = selectedStacks.Contains(tech);
+                                <div class="stack-tag @(sel ? "selected" : "")" @onclick="() => ToggleStack(tech, !sel)">@tech</div>
+                            }
+                        </div>
+                    }
+                </div>
             }
         </div>
     </div>
 </div>
 
-<!-- Progress / Loading -->
-@if (isLoading)
+<!-- ============================================================
+     BANNERS
+     ============================================================ -->
+@if (!string.IsNullOrEmpty(modelSwitchWarning))
 {
-    <div class="glass-panel" style="margin-bottom: 2rem;">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="mb-0 fw-bold" style="color: var(--color-primary);">
-                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                @loadingStatusText
-            </h6>
-            <span class="badge bg-primary fs-6 rounded-pill" style="font-weight: 500;">⏱ @(elapsedSeconds)с</span>
-        </div>
-        <div class="progress" style="height: 10px; border-radius: 5px; background-color: var(--color-border);">
-            <div class="progress-bar progress-bar-striped progress-bar-animated @(progressPercent >= 100 ? "bg-success" : "bg-primary")"
-                 role="progressbar" style="width: @(progressPercent)%;" aria-valuenow="@progressPercent" aria-valuemin="0" aria-valuemax="100"></div>
-        </div>
-        <small class="text-muted mt-2 d-block">💡 ИИ анализирует соответствие стека, уровня и опыта для всех найденных вакансий...</small>
+    <div class="banner banner-warning mt-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        @modelSwitchWarning
+    </div>
+}
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="banner banner-error mt-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        @errorMessage
     </div>
 }
 
-<!-- Results (Job Cards) -->
-@if (displayVacancies != null && displayVacancies.Any())
+<!-- ============================================================
+     LOADING PANEL
+     ============================================================ -->
+@if (isLoading || showCompletionAnim)
 {
-    <div class="d-flex justify-content-between align-items-center mb-3 px-2">
-        <h5 class="fw-bold mb-0">Найдено вакансий: @displayVacancies.Count</h5>
-        
-        <!-- Сортировка -->
-        <div class="d-flex align-items-center gap-2">
-            <span class="filter-label mb-0" style="margin-bottom:0;">Сортировать по:</span>
-            <div class="btn-group btn-group-sm">
-                <button class="btn @(currentSortColumn == "AiMatchScore" ? "btn-secondary" : "btn-outline-secondary")" @onclick='() => SortBy("AiMatchScore")'>Оценка @(currentSortColumn == "AiMatchScore" ? (isAscending ? "▲" : "▼") : "")</button>
-                <button class="btn @(currentSortColumn == "RequiredExperience" ? "btn-secondary" : "btn-outline-secondary")" @onclick='() => SortBy("RequiredExperience")'>Опыт @(currentSortColumn == "RequiredExperience" ? (isAscending ? "▲" : "▼") : "")</button>
-            </div>
+    <div class="loading-panel @(progressPercent >= 100 ? "is-complete" : "")">
+        <div class="d-flex justify-content-between align-items-center">
+            <span style="font-size: 0.875rem; font-weight: 600; color: var(--text-primary);">
+                @if (progressPercent < 100)
+                {
+                    <span class="spinner me-2" style="border-top-color: var(--accent); border-color: var(--accent-subtle-border) var(--accent-subtle-border) var(--accent-subtle-border) var(--accent);"></span>
+                }
+                else
+                {
+                    <svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                }
+                @loadingStatusText
+            </span>
+            <span style="font-size: 0.8rem; color: var(--text-secondary); font-weight: 500; font-variant-numeric: tabular-nums;">
+                @(elapsedSeconds)s
+            </span>
+        </div>
+        <div class="progress-track @(progressPercent >= 100 ? "is-complete" : "")">
+            <div class="progress-fill" style="width: @(progressPercent)%;"></div>
         </div>
     </div>
+}
 
-    <div class="job-list">
-        @foreach (var vac in displayVacancies)
+<!-- ============================================================
+     RESULTS
+     ============================================================ -->
+@if (displayVacancies != null && displayVacancies.Any())
+{
+    <div class="results-area">
+        <!-- Results header: meta + view mode controls + sort -->
+        <div class="results-header">
+            <div class="d-flex align-items-center gap-3">
+                <p class="results-meta mb-0">
+                    <strong>@displayVacancies.Count</strong> вакансий найдено
+                    @if (totalPages > 1) { <span> · стр. @currentPage / @totalPages</span> }
+                </p>
+
+                <!-- View / Filter tabs -->
+                <div class="d-flex gap-1">
+                    <button class="btn btn-ghost btn-sm @(showOnlySaved ? "" : "btn-outline")" style="@(!showOnlySaved ? "background:var(--bg-subtle);border-color:var(--border);" : "")" @onclick="() => SetView(false)">Все</button>
+                    <button class="btn btn-ghost btn-sm @(showOnlySaved ? "btn-outline" : "")" style="@(showOnlySaved ? "background:var(--bg-subtle);border-color:var(--border);" : "")" @onclick="() => SetView(true)">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="@(showOnlySaved ? "var(--warning)" : "none")" stroke="@(showOnlySaved ? "var(--warning)" : "currentColor")" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        Избранное
+                    </button>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+                <!-- Sort -->
+                <span style="font-size:0.75rem;color:var(--text-tertiary);">Сортировка:</span>
+                <button class="sort-btn @(currentSortColumn == "AiMatchScore" ? "active" : "")" @onclick='() => SortBy("AiMatchScore")'>
+                    Оценка @(currentSortColumn == "AiMatchScore" ? (isAscending ? "↑" : "↓") : "")
+                </button>
+                <button class="sort-btn @(currentSortColumn == "RequiredExperience" ? "active" : "")" @onclick='() => SortBy("RequiredExperience")'>
+                    Опыт @(currentSortColumn == "RequiredExperience" ? (isAscending ? "↑" : "↓") : "")
+                </button>
+
+                <!-- View toggle -->
+                <div class="view-toggle ms-2">
+                    <button class="view-toggle-btn @(!isTinderMode ? "active" : "")" @onclick="() => isTinderMode = false">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                        Список
+                    </button>
+                    <button class="view-toggle-btn @(isTinderMode ? "active" : "")" @onclick="() => { isTinderMode = true; currentTinderIndex = 0; }">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                        Tinder
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (!isTinderMode)
         {
-            var isTopMatch = vac.AiMatchScore >= 90;
-            var isExpanded = expandedSummaries.Contains(vac.Id);
-            
-            <div class="job-card @(isTopMatch ? "top-match-glow" : "")">
-                <div class="d-flex justify-content-between align-items-start">
-                    
-                    <div class="flex-grow-1 me-3">
-                        <div class="d-flex align-items-center gap-2 mb-2">
-                            <span class="badge bg-secondary text-uppercase" style="font-size:0.65rem; letter-spacing:0.5px; border-radius: 4px;">@vac.Source</span>
-                            <span class="text-muted" style="font-size: 0.8rem;">Опыт: <strong style="color: var(--color-foreground);">@(string.IsNullOrWhiteSpace(vac.RequiredExperience) ? "Смотреть в описании" : vac.RequiredExperience)</strong></span>
+            <!-- LIST VIEW -->
+            <div class="job-list">
+                @foreach (var vac in PagedVacancies)
+                {
+                    bool isTop = vac.AiMatchScore >= 90;
+                    string sourceClass = GetSourceClass(vac.Source);
+                    string sourceDomain = GetSourceDomain(vac.Source);
+
+                    <div class="job-card @(isTop ? "top-match" : "")">
+                        <div class="d-flex gap-3 align-items-start">
+                            <!-- Score ring -->
+                            <div class="score-ring-wrap">
+                                @{ var ringClass = vac.AiMatchScore >= 70 ? "ring-high" : vac.AiMatchScore >= 40 ? "ring-med" : "ring-low";
+                                   var circ = 2 * 3.14159 * 20;
+                                   var offset = circ * (1 - vac.AiMatchScore / 100.0); }
+                                <svg viewBox="0 0 44 44">
+                                    <circle class="score-ring-bg" cx="22" cy="22" r="20"/>
+                                    <circle class="score-ring-fill @ringClass" cx="22" cy="22" r="20"
+                                            stroke-dasharray="@(circ.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                            stroke-dashoffset="@(offset.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                            transform="rotate(-90 22 22)"/>
+                                </svg>
+                                <div class="score-value">@vac.AiMatchScore</div>
+                            </div>
+
+                            <!-- Main content -->
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                    <span class="source-badge @sourceClass">
+                                        <img src="https://www.google.com/s2/favicons?domain=@sourceDomain&sz=16" alt="@vac.Source" />
+                                        @vac.Source
+                                    </span>
+                                    <span style="font-size: 0.75rem; color: var(--text-tertiary);">
+                                        @FormatExperience(vac.RequiredExperience)
+                                    </span>
+                                    <span style="font-size: 0.75rem; color: var(--accent); font-weight: 500;">
+                                        @FormatTechStack(vac)
+                                    </span>
+                                </div>
+
+                                <a href="@vac.Url" target="_blank" class="job-title-link mb-1">@vac.Title</a>
+
+                                @if (!string.IsNullOrEmpty(vac.AiSummary))
+                                {
+                                    <!-- Show full summary — no truncation needed, AI text is compact -->
+                                    <div class="ai-summary mt-1">@vac.AiSummary</div>
+                                }
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="d-flex flex-column gap-1" style="flex-shrink: 0;">
+                                <!-- Favorite -->
+                                <button class="btn btn-ghost btn-icon" @onclick="() => ToggleSave(vac)"
+                                        title="@(vac.IsSaved ? "Убрать из избранного" : "В избранное")"
+                                        style="color: @(vac.IsSaved ? "var(--warning)" : "var(--text-tertiary)");">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="@(vac.IsSaved ? "var(--warning)" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                    </svg>
+                                </button>
+                                <!-- Discuss with AI -->
+                                @{ bool hasChat = HasActiveChat(vac.Id); }
+                                <button class="btn btn-ghost btn-icon @(hasChat ? "btn-chat-active" : "")" @onclick="() => OpenChat(vac)"
+                                        title="@(hasChat ? "Продолжить обсуждение с ИИ (есть история)" : "Обсудить с ИИ")"
+                                        style="color: var(--accent); position: relative;">
+                                    @if (hasChat)
+                                    {
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--accent)" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                        </svg>
+                                        <span class="chat-active-dot"></span>
+                                    }
+                                    else
+                                    {
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                        </svg>
+                                    }
+                                </button>
+                                <!-- Blacklist -->
+                                <button class="btn btn-ghost btn-icon" @onclick="() => AddToBlacklist(vac)"
+                                        title="В чёрный список"
+                                        style="color: var(--text-tertiary);">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                                    </svg>
+                                </button>
+                                <!-- Open link -->
+                                <a href="@vac.Url" target="_blank" class="btn btn-ghost btn-icon" title="Открыть"
+                                   style="color: var(--text-tertiary);">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                                    </svg>
+                                </a>
+                            </div>
                         </div>
-                        
-                        <a href="@vac.Url" target="_blank" class="text-decoration-none fw-bold fs-5 mb-1 d-block" style="color: var(--color-foreground); line-height: 1.3;">
-                            @vac.Title
-                        </a>
-                        
-                        <div class="mb-3" style="font-size: 0.85rem;">
-                            <strong style="color: var(--color-muted-foreground);">Стек (ИИ):</strong> <span style="font-weight: 500; color: var(--color-primary);">@vac.TechStack</span>
-                        </div>
-                        
-                        <div class="ai-summary @(isExpanded ? "" : "truncated")" @onclick="() => ToggleSummary(vac.Id)">
-                            <strong>🤖 Заключение ИИ:</strong> @vac.AiSummary
-                        </div>
-                        @if (!isExpanded && !string.IsNullOrEmpty(vac.AiSummary) && vac.AiSummary.Length > 100)
+                    </div>
+                }
+            </div>
+
+
+            <!-- PAGINATION -->
+            @if (totalPages > 1)
+            {
+                <div class="pagination-wrap">
+                    <button class="page-btn" @onclick="PrevPage" disabled="@(currentPage <= 1)">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+
+                    @foreach (var p in GetPageNumbers())
+                    {
+                        if (p == -1)
                         {
-                            <button class="btn-read-more" @onclick="() => ToggleSummary(vac.Id)">Читать далее</button>
+                            <span class="page-ellipsis">…</span>
+                        }
+                        else
+                        {
+                            <button class="page-btn @(p == currentPage ? "active" : "")" @onclick="() => GoToPage(p)">@p</button>
+                        }
+                    }
+
+                    <button class="page-btn" @onclick="NextPage" disabled="@(currentPage >= totalPages)">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                </div>
+            }
+        }
+        else
+        {
+            <!-- TINDER MODE -->
+            <div class="tinder-wrap">
+                @if (currentTinderIndex < displayVacancies.Count)
+                {
+                    var vac = displayVacancies[currentTinderIndex];
+                    bool isTop = vac.AiMatchScore >= 90;
+                    string sourceClass = GetSourceClass(vac.Source);
+                    string sourceDomain = GetSourceDomain(vac.Source);
+                    var circ2 = 2 * 3.14159 * 20;
+                    var offset2 = circ2 * (1 - vac.AiMatchScore / 100.0);
+                    var ringClass2 = vac.AiMatchScore >= 70 ? "ring-high" : vac.AiMatchScore >= 40 ? "ring-med" : "ring-low";
+
+                    <div class="tinder-counter">@(currentTinderIndex + 1) из @displayVacancies.Count</div>
+
+                    <div class="tinder-card @(isTop ? "top-match" : "")">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <span class="source-badge @sourceClass">
+                                <img src="https://www.google.com/s2/favicons?domain=@sourceDomain&sz=16" alt="@vac.Source" />
+                                @vac.Source
+                            </span>
+                            <div class="score-ring-wrap">
+                                <svg viewBox="0 0 44 44">
+                                    <circle class="score-ring-bg" cx="22" cy="22" r="20"/>
+                                    <circle class="score-ring-fill @ringClass2" cx="22" cy="22" r="20"
+                                            stroke-dasharray="@(circ2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                            stroke-dashoffset="@(offset2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                            transform="rotate(-90 22 22)"/>
+                                </svg>
+                                <div class="score-value">@vac.AiMatchScore</div>
+                            </div>
+                        </div>
+
+                        <a href="@vac.Url" target="_blank" class="tinder-job-title mb-2">@vac.Title</a>
+
+                        <div class="d-flex gap-3 mt-2 mb-3" style="font-size: 0.8rem; color: var(--text-secondary);">
+                            <span>@FormatExperience(vac.RequiredExperience)</span>
+                            <span style="color: var(--accent); font-weight: 500;">@FormatTechStack(vac)</span>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(vac.AiSummary))
+                        {
+                            <div style="font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
+                                @vac.AiSummary
+                            </div>
                         }
                     </div>
 
-                    <div class="d-flex flex-column align-items-center flex-shrink-0" style="width: 80px;">
-                        <!-- Circular AI Score -->
-                        <svg viewBox="0 0 36 36" class="circular-chart @(vac.AiMatchScore > 70 ? "score-high" : (vac.AiMatchScore > 40 ? "score-med" : "score-low"))">
-                          <path class="circle-bg"
-                            d="M18 2.0845
-                              a 15.9155 15.9155 0 0 1 0 31.831
-                              a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                          <path class="circle"
-                            stroke-dasharray="@(vac.AiMatchScore), 100"
-                            d="M18 2.0845
-                              a 15.9155 15.9155 0 0 1 0 31.831
-                              a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                          <text x="18" y="20.35" class="percentage">@vac.AiMatchScore</text>
-                        </svg>
-                        
-                        <!-- Action buttons -->
-                        <div class="d-flex mt-3 gap-2">
-                            <button class="btn btn-sm @(vac.IsSaved ? "btn-warning" : "btn-light") rounded-circle" @onclick="() => ToggleSave(vac)" style="width: 32px; height: 32px; padding: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);" title="В избранное">
-                                @(vac.IsSaved ? "⭐" : "☆")
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger rounded-circle" @onclick="() => RejectVacancy(vac)" style="width: 32px; height: 32px; padding: 0;" title="Скрыть навсегда">
-                                🗑
-                            </button>
-                        </div>
+                    <div class="tinder-actions">
+                        <!-- Dislike = to blacklist -->
+                        <button class="tinder-btn tinder-btn-dislike" @onclick="() => TinderDislike(vac)" title="В чёрный список">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                        </button>
+                        <!-- Like = save -->
+                        <button class="tinder-btn tinder-btn-like" @onclick="() => TinderLike(vac)" title="В избранное">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                            </svg>
+                        </button>
                     </div>
-                </div>
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <div style="font-size: 2rem; margin-bottom: 0.75rem;">✓</div>
+                        <div class="empty-state-title">Вы просмотрели все вакансии</div>
+                        <p>Измените фильтры или запустите новый поиск.</p>
+                        <button class="btn btn-outline mt-2" @onclick="() => isTinderMode = false">Вернуться к списку</button>
+                    </div>
+                }
             </div>
         }
     </div>
 }
-else if (hasLoaded)
+else if (hasLoaded && !isLoading)
 {
-    <div class="glass-panel text-center p-5">
-        <h4 class="text-muted fw-bold mb-2">Здесь пока пусто</h4>
-        <p class="text-muted mb-0">Запустите свежий парсинг, чтобы ИИ нашел лучшие вакансии для вас.</p>
+    <div class="empty-state">
+        <div class="empty-state-title">Здесь пока пусто</div>
+        <p>Выберите стек, платформы и нажмите «Найти вакансии».</p>
+    </div>
+}
+
+<!-- ============================================================
+     BLACKLIST MODAL
+     ============================================================ -->
+@if (showBlacklist)
+{
+    <div class="modal-overlay" @onclick="() => showBlacklist = false">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span class="modal-title">Чёрный список (@blacklistVacancies.Count)</span>
+                <button class="btn btn-ghost btn-icon-sm" @onclick="() => showBlacklist = false">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                @if (!blacklistVacancies.Any())
+                {
+                    <p style="color: var(--text-secondary); font-size: 0.875rem; text-align: center; padding: 1.5rem 0;">Список пуст</p>
+                }
+                else
+                {
+                    @foreach (var vac in blacklistVacancies)
+                    {
+                        <div class="blacklist-item">
+                            <div>
+                                <div class="blacklist-item-title">@vac.Title</div>
+                                <div style="font-size: 0.72rem; color: var(--text-tertiary);">@vac.Source</div>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" @onclick="() => RestoreFromBlacklist(vac)"
+                                    style="color: var(--accent); flex-shrink: 0;">
+                                Восстановить
+                            </button>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ============================================================
+     CHAT MODAL — Full-screen AI conversation
+     ============================================================ -->
+@if (showChat && chatVacancy != null)
+{
+    <div class="chat-modal-overlay">
+        <div class="chat-modal">
+            <!-- Header -->
+            <div class="chat-header">
+                <div class="chat-header-info">
+                    <div class="chat-vacancy-title">@chatVacancy.Title</div>
+                    <div class="chat-vacancy-meta">
+                        <span class="source-badge @GetSourceClass(chatVacancy.Source)">
+                            <img src="https://www.google.com/s2/favicons?domain=@GetSourceDomain(chatVacancy.Source)&sz=16" alt="@chatVacancy.Source" />
+                            @chatVacancy.Source
+                        </span>
+                        <span>@FormatExperience(chatVacancy.RequiredExperience)</span>
+                        <span class="chat-secure-badge">
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            Защищённый чат
+                        </span>
+                    </div>
+                </div>
+                <button class="btn btn-ghost btn-icon" @onclick="CloseChat" title="Закрыть чат" style="flex-shrink:0;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Messages -->
+            <div class="chat-messages">
+                @if (!chatHistory.Any())
+                {
+                    <div class="chat-empty">
+                        <div class="chat-empty-icon">
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            </svg>
+                        </div>
+                        <div style="font-weight: 600; color: var(--text-primary);">Спросите ИИ о вакансии</div>
+                        <div class="chat-empty-hint">Например: «Подхожу ли я под эту позицию?», «Что за технологии в стеке?»</div>
+                    </div>
+                }
+                @foreach (var msg in chatHistory)
+                {
+                    <div class="chat-message @msg.Role">
+                        <div class="chat-bubble">@RenderMarkdown(msg.Content)</div>
+                    </div>
+                }
+                @if (chatIsLoading)
+                {
+                    <div class="chat-typing"><span></span><span></span><span></span></div>
+                }
+            </div>
+
+            <!-- Input area -->
+            <div>
+                @if (!string.IsNullOrEmpty(chatErrorMessage))
+                {
+                    <div class="banner banner-error" style="margin: 0 1.5rem 0.5rem;">@chatErrorMessage</div>
+                }
+                <div class="chat-input-row">
+                    <div style="flex:1; display:flex; flex-direction:column; gap:0.25rem;">
+                        <textarea class="chat-input"
+                                  rows="2"
+                                  placeholder="Задайте вопрос по вакансии..."
+                                  @bind="chatInputText"
+                                  @bind:event="oninput"
+                                  @onkeydown="OnChatKeyDown"
+                                  maxlength="600"
+                                  disabled="@chatIsLoading"></textarea>
+                        <div class="chat-char-count @(chatInputText.Length > 500 ? (chatInputText.Length >= 600 ? "at-limit" : "near-limit") : "")">
+                            @chatInputText.Length / 600
+                        </div>
+                    </div>
+                    <button class="chat-send-btn" @onclick="SendChatMessage"
+                            disabled="@(chatIsLoading || string.IsNullOrWhiteSpace(chatInputText) || chatInputText.Length > 600 || chatMessageCount >= 10)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="chat-disclaimer">
+                    Чат защищён и ограничен вопросами по данной вакансии &middot; @(10 - chatMessageCount) запросов осталось
+                </div>
+            </div>
+        </div>
     </div>
 }
 
 @code {
-    // ---------------------------------------------------------------
+    // ============================================================
     // State
-    // ---------------------------------------------------------------
+    // ============================================================
     private string targetLanguage = "Українська";
-    private List<string> selectedPlatforms = new() { "djinni", "workua" };
+    private List<string> selectedPlatforms = new() { "djinni", "workua", "robota" };
     private string apiKey = "";
     private string targetRole = "Trainee/Junior Developer";
     private string targetExp = "Без коммерческого опыта (Студент)";
@@ -253,101 +679,124 @@ else if (hasLoaded)
     private bool showOnlySaved = false;
     private string modelSwitchWarning = "";
 
-    private List<BlazorApp1.Models.Vacancy> displayVacancies = new();
+    // Tinder Mode
+    private bool isTinderMode = false;
+    private int currentTinderIndex = 0;
 
-    // Stack checkboxes
-    private HashSet<string> selectedStacks = new();
-
-    // Summary expansion state
+    // Summary expansion
     private HashSet<int> expandedSummaries = new();
 
-    private void ToggleSummary(int vacancyId)
-    {
-        if (expandedSummaries.Contains(vacancyId))
-            expandedSummaries.Remove(vacancyId);
-        else
-            expandedSummaries.Add(vacancyId);
-    }
+    // Blacklist
+    private List<BlazorApp1.Models.Vacancy> blacklistVacancies = new();
+    private bool showBlacklist = false;
 
-    /// <summary>Keyword sent to the scraper (comma-joined selected stacks).</summary>
-    private string SearchKeyword => string.Join(", ", selectedStacks);
+    // Completion animation
+    private bool showCompletionAnim = false;
 
-    private bool IsButtonDisabled => isLoading || string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 10 || !selectedStacks.Any() || !selectedPlatforms.Any();
+    // Chat state (per-vacancy persistent memory)
+    private bool showChat = false;
+    private BlazorApp1.Models.Vacancy? chatVacancy = null;
+    private List<ChatMessage> chatHistory = new();
+    private string chatInputText = "";
+    private bool chatIsLoading = false;
+    private string chatErrorMessage = "";
+    private int chatMessageCount = 0;
+    private Dictionary<int, List<ChatMessage>> vacancyChatHistories = new();
+    private Dictionary<int, int> vacancyChatCounts = new();
 
-    private void TogglePlatform(string platform, ChangeEventArgs e)
-    {
-        var isChecked = (bool)(e.Value ?? false);
-        if (isChecked && !selectedPlatforms.Contains(platform))
-            selectedPlatforms.Add(platform);
-        else if (!isChecked)
-            selectedPlatforms.Remove(platform);
-    }
-
-    // ---------------------------------------------------------------
-    // Stack groups definition
-    // ---------------------------------------------------------------
-    private static readonly Dictionary<string, List<string>> StackGroups = new()
-    {
-        ["Backend"] = new() { "C#", ".NET", "Java", "Python", "Go", "PHP", "Ruby", "Rust", "C++" },
-        ["Frontend"] = new() { "JavaScript", "TypeScript", "React", "Angular", "Vue.js", "Next.js" },
-        ["Mobile"] = new() { "Flutter", "React Native", "Swift", "Kotlin" },
-        ["DevOps / Cloud"] = new() { "Docker", "Kubernetes", "AWS", "Azure", "CI/CD" },
-        ["QA"] = new() { "QA / Testing", "Selenium", "Playwright" },
-        ["БД"] = new() { "SQL", "PostgreSQL", "MongoDB", "Redis", "MySQL" },
-        ["AI / ML"] = new() { "Python ML", "PyTorch", "TensorFlow", "LLM" },
+    // Client-side chat blacklist (Layer 2 — UX guard)
+    private static readonly string[] ChatClientBlacklist = {
+        "ignore previous", "forget instructions", "new role", "act as",
+        "you are now", "pretend", "jailbreak", "system prompt", "reveal your",
+        "write code", "execute", "rm -rf", "SELECT * FROM", "DROP TABLE",
+        "игнорируй", "забудь инструкции", "новая роль", "притворись",
+        "ты теперь", "смени роль", "покажи системный", "напиши код",
+        "выполни код", "base64", "override",
     };
 
-    // ---------------------------------------------------------------
-    // Lifecycle
-    // ---------------------------------------------------------------
-    protected override async Task OnInitializedAsync()
+    // Stack groups — which are open (accordion)
+    private HashSet<string> openStackGroups = new() { "Backend" };
+
+
+    // Pagination
+    private int currentPage = 1;
+    private const int PageSize = 10;
+    private int totalPages => displayVacancies.Any()
+        ? (int)Math.Ceiling(displayVacancies.Count / (double)PageSize) : 1;
+    private IEnumerable<BlazorApp1.Models.Vacancy> PagedVacancies =>
+        displayVacancies.Skip((currentPage - 1) * PageSize).Take(PageSize);
+
+    private List<BlazorApp1.Models.Vacancy> displayVacancies = new();
+    private HashSet<string> selectedStacks = new();
+
+    // Platform definitions
+    private record PlatformInfo(string Key, string Name, string Domain);
+    private static readonly List<PlatformInfo> Platforms = new()
     {
-        await LoadFromDb();
-    }
+        new("djinni", "Djinni", "djinni.co"),
+        new("workua",  "Work.ua",  "work.ua"),
+        new("robota",  "Robota.ua","robota.ua"),
+        new("dou",     "DOU",      "dou.ua"),
+    };
+
+    // ============================================================
+    // Stack groups
+    // ============================================================
+    private static readonly Dictionary<string, List<string>> StackGroups = new()
+    {
+        ["Backend"]      = new() { "C#", ".NET", "Java", "Python", "Go", "PHP", "Ruby", "Rust", "C++" },
+        ["Frontend"]     = new() { "JavaScript", "TypeScript", "React", "Angular", "Vue.js", "Next.js" },
+        ["Mobile"]       = new() { "Flutter", "React Native", "Swift", "Kotlin" },
+        ["DevOps/Cloud"] = new() { "Docker", "Kubernetes", "AWS", "Azure", "CI/CD" },
+        ["QA"]           = new() { "QA/Testing", "Selenium", "Playwright" },
+        ["Базы данных"]  = new() { "SQL", "PostgreSQL", "MongoDB", "Redis", "MySQL" },
+        ["AI / ML"]      = new() { "Python ML", "PyTorch", "TensorFlow", "LLM" },
+    };
+
+    // ============================================================
+    // Lifecycle
+    // ============================================================
+    protected override async Task OnInitializedAsync() => await LoadFromDb();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (!firstRender) return;
+
+        var keyResult = await BrowserStorage.GetAsync<string>("savedApiKey");
+        if (keyResult.Success && !string.IsNullOrEmpty(keyResult.Value)) apiKey = keyResult.Value;
+
+        var roleResult = await BrowserStorage.GetAsync<string>("savedRole");
+        if (roleResult.Success && !string.IsNullOrEmpty(roleResult.Value)) targetRole = roleResult.Value;
+
+        var expResult = await BrowserStorage.GetAsync<string>("savedExp");
+        if (expResult.Success && !string.IsNullOrEmpty(expResult.Value)) targetExp = expResult.Value;
+
+        var langResult = await BrowserStorage.GetAsync<string>("savedLanguage");
+        if (langResult.Success && !string.IsNullOrEmpty(langResult.Value)) targetLanguage = langResult.Value;
+
+        var stacksResult = await BrowserStorage.GetAsync<string>("savedStacks");
+        if (stacksResult.Success && !string.IsNullOrEmpty(stacksResult.Value))
         {
-            var keyResult = await BrowserStorage.GetAsync<string>("savedApiKey");
-            if (keyResult.Success && !string.IsNullOrEmpty(keyResult.Value))
-                apiKey = keyResult.Value;
-
-            var roleResult = await BrowserStorage.GetAsync<string>("savedRole");
-            if (roleResult.Success && !string.IsNullOrEmpty(roleResult.Value))
-                targetRole = roleResult.Value;
-
-            var expResult = await BrowserStorage.GetAsync<string>("savedExp");
-            if (expResult.Success && !string.IsNullOrEmpty(expResult.Value))
-                targetExp = expResult.Value;
-
-            var langResult = await BrowserStorage.GetAsync<string>("savedLanguage");
-            if (langResult.Success && !string.IsNullOrEmpty(langResult.Value))
-                targetLanguage = langResult.Value;
-
-            // Restore selected stacks from storage
-            var stacksResult = await BrowserStorage.GetAsync<string>("savedStacks");
-            if (stacksResult.Success && !string.IsNullOrEmpty(stacksResult.Value))
-            {
-                selectedStacks = new HashSet<string>(
-                    stacksResult.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                );
-            }
-
-            StateHasChanged();
+            selectedStacks = new HashSet<string>(
+                stacksResult.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         }
+
+        StateHasChanged();
     }
 
-    // ---------------------------------------------------------------
-    // Stack checkbox logic
-    // ---------------------------------------------------------------
+    // ============================================================
+    // Stack helpers
+    // ============================================================
+    private void ToggleStackGroup(string group)
+    {
+        if (openStackGroups.Contains(group)) openStackGroups.Remove(group);
+        else openStackGroups.Add(group);
+    }
+
     private async Task ToggleStack(string tech, bool isChecked)
     {
-        if (isChecked)
-            selectedStacks.Add(tech);
-        else
-            selectedStacks.Remove(tech);
-
+        if (isChecked) selectedStacks.Add(tech);
+        else selectedStacks.Remove(tech);
         await BrowserStorage.SetAsync("savedStacks", string.Join(",", selectedStacks));
     }
 
@@ -357,21 +806,314 @@ else if (hasLoaded)
         await BrowserStorage.SetAsync("savedStacks", "");
     }
 
-    // ---------------------------------------------------------------
+    // ============================================================
+    // Platforms
+    // ============================================================
+    private void TogglePlatformDirect(string platform)
+    {
+        if (selectedPlatforms.Contains(platform)) selectedPlatforms.Remove(platform);
+        else selectedPlatforms.Add(platform);
+    }
+
+    // ============================================================
+    // Source styling helpers
+    // ============================================================
+    private string GetSourceClass(string source)
+    {
+        var s = source?.ToLowerInvariant() ?? "";
+        if (s.Contains("djinni")) return "source-djinni";
+        if (s.Contains("work"))   return "source-workua";
+        if (s.Contains("robota")) return "source-robota";
+        if (s.Contains("dou"))    return "source-dou";
+        return "";
+    }
+
+    private string GetSourceDomain(string source)
+    {
+        var s = source?.ToLowerInvariant() ?? "";
+        if (s.Contains("djinni")) return "djinni.co";
+        if (s.Contains("work"))   return "work.ua";
+        if (s.Contains("robota")) return "robota.ua";
+        if (s.Contains("dou"))    return "dou.ua";
+        return "google.com";
+    }
+
+    // ============================================================
+    // Summary expand/collapse
+    // ============================================================
+    private void ToggleSummary(int id)
+    {
+        if (expandedSummaries.Contains(id)) expandedSummaries.Remove(id);
+        else expandedSummaries.Add(id);
+    }
+
+    // ============================================================
+    // Tinder
+    // ============================================================
+    private async Task TinderLike(BlazorApp1.Models.Vacancy vac)
+    {
+        if (!vac.IsSaved) await ToggleSave(vac);
+        currentTinderIndex++;
+    }
+
+    private Task TinderDislike(BlazorApp1.Models.Vacancy vac)
+    {
+        AddToBlacklist(vac);
+        // don't increment — the vacancy is removed from displayVacancies so next item slides to same index
+        return Task.CompletedTask;
+    }
+
+    // ============================================================
+    // Blacklist
+    // ============================================================
+    private void AddToBlacklist(BlazorApp1.Models.Vacancy vac)
+    {
+        if (!blacklistVacancies.Any(v => v.Id == vac.Id))
+            blacklistVacancies.Add(vac);
+        displayVacancies.Remove(vac);
+        // Keep tinder index valid
+        if (currentTinderIndex >= displayVacancies.Count && currentTinderIndex > 0)
+            currentTinderIndex = displayVacancies.Count - 1;
+    }
+
+    private void RestoreFromBlacklist(BlazorApp1.Models.Vacancy vac)
+    {
+        blacklistVacancies.Remove(vac);
+        if (!displayVacancies.Any(v => v.Id == vac.Id))
+        {
+            displayVacancies.Add(vac);
+            ApplySorting();
+        }
+    }
+
+    // ============================================================
+    // Chat (Persistent per-vacancy)
+    // ============================================================
+    private bool HasActiveChat(int vacancyId) =>
+        vacancyChatHistories.TryGetValue(vacancyId, out var h) && h.Any();
+
+    private void OpenChat(BlazorApp1.Models.Vacancy vac)
+    {
+        chatVacancy = vac;
+        if (vacancyChatHistories.TryGetValue(vac.Id, out var existing))
+        {
+            chatHistory = existing;
+        }
+        else
+        {
+            chatHistory = new();
+            vacancyChatHistories[vac.Id] = chatHistory;
+        }
+
+        chatMessageCount = vacancyChatCounts.TryGetValue(vac.Id, out var count) ? count : 0;
+        chatInputText = "";
+        chatErrorMessage = "";
+        showChat = true;
+    }
+
+    private void CloseChat()
+    {
+        if (chatVacancy != null)
+        {
+            vacancyChatCounts[chatVacancy.Id] = chatMessageCount;
+        }
+        showChat = false;
+        chatVacancy = null;
+        chatInputText = "";
+        chatIsLoading = false;
+        chatErrorMessage = "";
+    }
+
+    private async Task OnChatKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !chatIsLoading && !string.IsNullOrWhiteSpace(chatInputText))
+        {
+            await SendChatMessage();
+        }
+    }
+
+    private async Task SendChatMessage()
+    {
+        var message = chatInputText.Trim();
+        if (string.IsNullOrEmpty(message) || chatVacancy == null) return;
+        if (chatMessageCount >= 10) { chatErrorMessage = "Лимит 10 сообщений на сессию этой вакансии достигнут."; return; }
+        if (message.Length > 600) { chatErrorMessage = "Сообщение слишком длинное."; return; }
+
+        // Layer 2: client-side UX guard
+        var lower = message.ToLowerInvariant();
+        if (ChatClientBlacklist.Any(p => lower.Contains(p.ToLowerInvariant())))
+        {
+            chatErrorMessage = "Этот тип запроса недопустим. Задайте вопрос по вакансии.";
+            chatInputText = "";
+            return;
+        }
+
+        chatErrorMessage = "";
+        chatInputText = "";
+        chatIsLoading = true;
+
+        var historySnapshot = new List<ChatMessage>(chatHistory);
+
+        chatHistory.Add(new ChatMessage("user", message));
+        chatMessageCount++;
+        if (chatVacancy != null) vacancyChatCounts[chatVacancy.Id] = chatMessageCount;
+        StateHasChanged();
+
+        try
+        {
+            var reply = await ParsingBackendClient.ChatAsync(
+                apiKey, chatVacancy, historySnapshot, message);
+
+            chatHistory.Add(new ChatMessage("assistant", reply));
+        }
+        catch (Exception)
+        {
+            chatHistory.Add(new ChatMessage("assistant", "Не удалось связаться с сервером. Пожалуйста, попробуйте отправить вопрос ещё раз."));
+        }
+        finally
+        {
+            chatIsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ============================================================
+    // Format helpers (Strict display)
+    // ============================================================
+    private string FormatExperience(string? exp)
+    {
+        if (string.IsNullOrWhiteSpace(exp))
+            return "Опыт: не указан";
+
+        var trimmed = exp.Trim();
+        if (trimmed.StartsWith("Опыт:", StringComparison.OrdinalIgnoreCase))
+            return trimmed;
+
+        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"^(\d+)\s*(?:лет/год\(а\)|лет|года|год|роки|років|рік)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            int years = int.Parse(match.Groups[1].Value);
+            string unit = (years % 10 == 1 && years % 100 != 11) ? "год" :
+                          (years % 10 >= 2 && years % 10 <= 4 && (years % 100 < 10 || years % 100 >= 20)) ? "года" : "лет";
+            return $"Опыт: {years} {unit}";
+        }
+
+        if (trimmed.Equals("Смотреть в описании", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("в описании", StringComparison.OrdinalIgnoreCase))
+            return "Опыт: в описании";
+
+        if (trimmed.Contains("без", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("опыт", StringComparison.OrdinalIgnoreCase))
+            return "Опыт: без опыта";
+
+        return $"Опыт: {trimmed}";
+    }
+
+    private string FormatTechStack(BlazorApp1.Models.Vacancy vac)
+    {
+        var stack = vac.TechStack?.Trim();
+        if (string.IsNullOrWhiteSpace(stack) || stack.Equals("Не указано", StringComparison.OrdinalIgnoreCase) || stack.Equals("Ошибка анализа", StringComparison.OrdinalIgnoreCase))
+        {
+            stack = ExtractStackFromTitle(vac.Title);
+        }
+
+        if (stack.StartsWith("Стек:", StringComparison.OrdinalIgnoreCase))
+            return stack;
+
+        return $"Стек: {stack}";
+    }
+
+    private string ExtractStackFromTitle(string title)
+    {
+        var known = new[] { "C#", ".NET", "ASP.NET", "WPF", "SQL", "Python", "JavaScript", "TypeScript", "React", "Vue", "Angular", "Node.js", "Java", "Go", "Rust", "C++", "Docker", "Kubernetes", "AWS", "Azure", "Flutter", "iOS", "Android", "QA", "Creatio", "Umbraco" };
+        var found = new List<string>();
+        var tLow = title.ToLowerInvariant();
+        foreach (var k in known)
+        {
+            if (tLow.Contains(k.ToLowerInvariant()))
+                found.Add(k);
+        }
+        if (found.Any())
+            return string.Join(", ", found.Take(4));
+
+        if (selectedStacks.Any())
+            return string.Join(", ", selectedStacks.Take(3));
+
+        return "C#, .NET";
+    }
+
+    private static MarkupString RenderMarkdown(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return (MarkupString)"";
+
+        var encoded = System.Net.WebUtility.HtmlEncode(raw);
+
+        // Headings
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"^###\s*(.+)$", "<h4 class=\"chat-h4\">$1</h4>", System.Text.RegularExpressions.RegexOptions.Multiline);
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"^##\s*(.+)$", "<h3 class=\"chat-h3\">$1</h3>", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Bold & Italic
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"(?<!\*)\*([^*]+?)\*(?!\*)", "<em>$1</em>");
+
+        // Horizontal rule
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"^---+$", "<hr class=\"chat-hr\" />", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Lists
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"^(\d+)\.\s+(.+)$", "<div class=\"chat-list-item\"><span class=\"chat-list-num\">$1.</span> $2</div>", System.Text.RegularExpressions.RegexOptions.Multiline);
+        encoded = System.Text.RegularExpressions.Regex.Replace(
+            encoded, @"^(?:-|\*|—)\s+(.+)$", "<div class=\"chat-list-item\"><span class=\"chat-list-bullet\">•</span> $1</div>", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Line breaks
+        encoded = encoded.Replace("\n", "<br />");
+        encoded = System.Text.RegularExpressions.Regex.Replace(encoded, @"(<(?:h3|h4|div|hr)[^>]*>)<br\s*/?>", "$1");
+        encoded = System.Text.RegularExpressions.Regex.Replace(encoded, @"</(?:h3|h4|div)><br\s*/?>", "</$1>");
+
+        return (MarkupString)encoded;
+    }
+
+    // ============================================================
+    // Pagination
+    // ============================================================
+    private void GoToPage(int p) { currentPage = p; expandedSummaries.Clear(); }
+    private void PrevPage() { if (currentPage > 1) GoToPage(currentPage - 1); }
+    private void NextPage() { if (currentPage < totalPages) GoToPage(currentPage + 1); }
+
+    private List<int> GetPageNumbers()
+    {
+        var pages = new List<int>();
+        if (totalPages <= 7)
+        {
+            for (int i = 1; i <= totalPages; i++) pages.Add(i);
+        }
+        else
+        {
+            pages.Add(1);
+            if (currentPage > 3) pages.Add(-1); // ellipsis
+            for (int i = Math.Max(2, currentPage - 1); i <= Math.Min(totalPages - 1, currentPage + 1); i++)
+                pages.Add(i);
+            if (currentPage < totalPages - 2) pages.Add(-1);
+            pages.Add(totalPages);
+        }
+        return pages;
+    }
+
+    // ============================================================
     // Sorting
-    // ---------------------------------------------------------------
+    // ============================================================
     private string currentSortColumn = "AiMatchScore";
     private bool isAscending = false;
 
-    private void SortBy(string columnName)
+    private void SortBy(string col)
     {
-        if (currentSortColumn == columnName)
-            isAscending = !isAscending;
-        else
-        {
-            currentSortColumn = columnName;
-            isAscending = true;
-        }
+        if (currentSortColumn == col) isAscending = !isAscending;
+        else { currentSortColumn = col; isAscending = col != "AiMatchScore"; }
         ApplySorting();
     }
 
@@ -379,39 +1121,25 @@ else if (hasLoaded)
     {
         displayVacancies = currentSortColumn switch
         {
-            "Title" => isAscending
-                ? displayVacancies.OrderBy(v => v.Title).ToList()
-                : displayVacancies.OrderByDescending(v => v.Title).ToList(),
-            "RequiredExperience" => isAscending
-                ? displayVacancies.OrderBy(v => ParseExperienceToMonths(v.RequiredExperience)).ToList()
-                : displayVacancies.OrderByDescending(v => ParseExperienceToMonths(v.RequiredExperience)).ToList(),
-            "AiMatchScore" => isAscending
-                ? displayVacancies.OrderBy(v => v.AiMatchScore).ToList()
-                : displayVacancies.OrderByDescending(v => v.AiMatchScore).ToList(),
-            _ => displayVacancies
+            "Title"             => isAscending ? displayVacancies.OrderBy(v => v.Title).ToList() : displayVacancies.OrderByDescending(v => v.Title).ToList(),
+            "RequiredExperience"=> isAscending ? displayVacancies.OrderBy(v => ParseExp(v.RequiredExperience)).ToList() : displayVacancies.OrderByDescending(v => ParseExp(v.RequiredExperience)).ToList(),
+            "AiMatchScore"      => isAscending ? displayVacancies.OrderBy(v => v.AiMatchScore).ToList() : displayVacancies.OrderByDescending(v => v.AiMatchScore).ToList(),
+            _                   => displayVacancies
         };
+        currentTinderIndex = 0;
+        currentPage = 1;
     }
 
-    private string GetSortIcon(string columnName)
-    {
-        if (currentSortColumn != columnName) return "↕";
-        return isAscending ? "▲" : "▼";
-    }
-
-    // ---------------------------------------------------------------
+    // ============================================================
     // DB helpers
-    // ---------------------------------------------------------------
+    // ============================================================
+    private string SearchKeyword => string.Join(", ", selectedStacks);
+    private bool IsButtonDisabled => isLoading || string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 10 || !selectedStacks.Any() || !selectedPlatforms.Any();
+
     private async Task ClearCache()
     {
-        try
-        {
-            await VacancyService.ClearCacheAsync();
-            await LoadFromDb();
-        }
-        catch (Exception ex)
-        {
-            errorMessage = "Ошибка при очистке БД: " + ex.Message;
-        }
+        try { await VacancyService.ClearCacheAsync(); await LoadFromDb(); }
+        catch (Exception ex) { errorMessage = "Ошибка при очистке БД: " + ex.Message; }
     }
 
     private async Task LoadFromDb()
@@ -422,66 +1150,38 @@ else if (hasLoaded)
             ApplySorting();
             hasLoaded = true;
         }
-        catch (Exception ex)
-        {
-            errorMessage = "Ошибка чтения БД: " + ex.Message;
-        }
+        catch (Exception ex) { errorMessage = "Ошибка чтения БД: " + ex.Message; }
     }
 
-    private async Task RejectVacancy(BlazorApp1.Models.Vacancy vac)
-    {
-        await VacancyService.RejectVacancyAsync(vac);
-        displayVacancies.Remove(vac);
-    }
+    private async Task SetView(bool showSaved) { showOnlySaved = showSaved; await LoadFromDb(); }
 
-    private async Task SetView(bool showSaved)
-    {
-        showOnlySaved = showSaved;
-        await LoadFromDb();
-    }
+    private async Task ToggleSave(BlazorApp1.Models.Vacancy vac) => await VacancyService.ToggleSaveAsync(vac);
 
-    private async Task ToggleSave(BlazorApp1.Models.Vacancy vac)
-    {
-        await VacancyService.ToggleSaveAsync(vac);
-    }
-
-    // ---------------------------------------------------------------
-    // Progress bar + Timer state
-    // ---------------------------------------------------------------
+    // ============================================================
+    // Progress bar + Main parsing
+    // ============================================================
     private int elapsedSeconds = 0;
     private int progressPercent = 5;
-    private string loadingStatusText = "🔍 Поиск и сбор вакансий...";
+    private string loadingStatusText = "Поиск вакансий...";
     private System.Threading.CancellationTokenSource? loadingCts;
 
-    // ---------------------------------------------------------------
-    // Main parsing logic
-    // ---------------------------------------------------------------
     private async Task StartParsing()
     {
-        isLoading = true;
-        errorMessage = "";
-        modelSwitchWarning = "";
-        elapsedSeconds = 0;
-        progressPercent = 5;
-        loadingStatusText = $"🔍 Поиск и сбор вакансий на {string.Join(", ", selectedPlatforms.Select(p => p.ToUpper()))}...";
+        isLoading = true; errorMessage = ""; modelSwitchWarning = "";
+        elapsedSeconds = 0; progressPercent = 5;
+        loadingStatusText = $"Поиск на {string.Join(", ", selectedPlatforms.Select(p => p.ToUpper()))}...";
 
         loadingCts = new System.Threading.CancellationTokenSource();
         var ct = loadingCts.Token;
 
-        // --- System.Timers.Timer for reliable UI updates ---
         using var timer = new System.Timers.Timer(1000);
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        timer.Elapsed += async (sender, e) =>
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        timer.Elapsed += async (_, _) =>
         {
-            var secs = (int)stopwatch.Elapsed.TotalSeconds;
-            if (secs != elapsedSeconds)
-            {
-                elapsedSeconds = secs;
-                await InvokeAsync(StateHasChanged);
-            }
+            var s = (int)sw.Elapsed.TotalSeconds;
+            if (s != elapsedSeconds) { elapsedSeconds = s; await InvokeAsync(StateHasChanged); }
         };
         timer.Start();
-
         StateHasChanged();
 
         try
@@ -491,84 +1191,62 @@ else if (hasLoaded)
             await BrowserStorage.SetAsync("savedRole", targetRole);
             await BrowserStorage.SetAsync("savedExp", targetExp);
 
-            await foreach (var streamEvent in ParsingBackendClient.ParseVacanciesStreamAsync(
+            await foreach (var ev in ParsingBackendClient.ParseVacanciesStreamAsync(
                 selectedPlatforms, apiKey, SearchKeyword, targetRole, targetExp, targetLanguage,
                 salaryExpectations, workFormat, englishLevel, employmentType, ct))
             {
-                if (streamEvent.Type == "progress")
+                if (ev.Type == "progress")
                 {
-                    if (streamEvent.Percent >= 0)
-                        progressPercent = streamEvent.Percent;
-                    loadingStatusText = streamEvent.Message;
+                    if (ev.Percent >= 0) progressPercent = ev.Percent;
+                    loadingStatusText = ev.Message;
                     await InvokeAsync(StateHasChanged);
                 }
-                else if (streamEvent.Type == "model_switch")
+                else if (ev.Type == "model_switch")
                 {
-                    // Show warning without touching progress bar
-                    modelSwitchWarning = streamEvent.Message;
+                    modelSwitchWarning = ev.Message;
                     await InvokeAsync(StateHasChanged);
                 }
-                else if (streamEvent.Type == "complete")
+                else if (ev.Type == "complete")
                 {
-                    progressPercent = 100;
-                    loadingStatusText = "✅ Анализ завершён!";
+                    progressPercent = 100; loadingStatusText = "Анализ завершён";
+                    showCompletionAnim = true;
                     await InvokeAsync(StateHasChanged);
+                    await Task.Delay(2500, ct); // Let orb-pulse play (3 × 0.7s = 2.1s + buffer)
+                    showCompletionAnim = false;
 
-                    await Task.Delay(700, ct);
-
-                    if (streamEvent.Status == "success" && streamEvent.Data != null && streamEvent.Data.Any())
+                    if (ev.Status == "success" && ev.Data != null && ev.Data.Any())
                     {
-                        await VacancyService.SaveNewVacanciesAsync(streamEvent.Data, ct);
+                        await VacancyService.SaveNewVacanciesAsync(ev.Data, ct);
                         showOnlySaved = false;
-                        
-                        // Сбросить сортировку на "по Оценке (убывание)" принудительно
-                        currentSortColumn = "AiMatchScore";
-                        isAscending = false;
-                        
+                        currentSortColumn = "AiMatchScore"; isAscending = false;
                         await LoadFromDb();
                     }
-                    else
-                    {
-                        errorMessage = streamEvent.Message ?? "Парсер вернул 0 вакансий.";
-                    }
+                    else { errorMessage = ev.Message ?? "Парсер вернул 0 вакансий."; }
                     break;
                 }
             }
         }
-        catch (Exception ex)
-        {
-            errorMessage = $"Ошибка соединения с сервером Python: {ex.Message}";
-        }
+        catch (Exception ex) { errorMessage = $"Ошибка соединения с сервером Python: {ex.Message}"; }
         finally
         {
-            loadingCts?.Cancel();
-            loadingCts?.Dispose();
-            loadingCts = null;
-            isLoading = false;
-            if (timer != null) timer.Stop();
+            loadingCts?.Cancel(); loadingCts?.Dispose(); loadingCts = null;
+            isLoading = false; timer.Stop();
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    // ---------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------
-    private int ParseExperienceToMonths(string exp)
+    // ============================================================
+    // Helper
+    // ============================================================
+    private int ParseExp(string exp)
     {
-        if (string.IsNullOrWhiteSpace(exp) || exp.ToLower().Contains("not specified"))
-            return -1;
-
-        var lowerExp = exp.ToLower();
-        var match = System.Text.RegularExpressions.Regex.Match(lowerExp, @"\d+");
-        if (!match.Success) return -1;
-
-        int number = int.Parse(match.Value);
-
-        if (lowerExp.Contains("мес")) return number;
-        if (lowerExp.Contains("год") || lowerExp.Contains("лет") || lowerExp.Contains("года")) return number * 12;
-
-        return number;
+        if (string.IsNullOrWhiteSpace(exp) || exp.ToLower().Contains("not specified")) return -1;
+        var m = System.Text.RegularExpressions.Regex.Match(exp.ToLower(), @"\d+");
+        if (!m.Success) return -1;
+        int n = int.Parse(m.Value);
+        var lw = exp.ToLower();
+        if (lw.Contains("мес")) return n;
+        if (lw.Contains("год") || lw.Contains("лет") || lw.Contains("года")) return n * 12;
+        return n;
     }
-
-
 }

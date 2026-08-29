@@ -12,6 +12,7 @@ from App.config import (
     DEFAULT_GROQ_MODEL,
     DEFAULT_OPENROUTER_MODEL,
     OPENROUTER_MODEL_FALLBACK_CHAIN,
+    get_live_openrouter_free_models,
     DEEPSEEK_BASE_URL,
     EXPERIENCE_WEIGHT,
     GROQ_BASE_URL,
@@ -19,10 +20,49 @@ from App.config import (
     OPENROUTER_BASE_URL,
     ROLE_WEIGHT,
     TECH_WEIGHT,
+    FATAL_ERROR_SIGNALS,
 )
 from App.models import Vacancy, JobCriteria
 
 BATCH_SIZE = 7
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rotating loading phrases — cycled every ~2s while AI is thinking.
+# Adds life to the progress bar so it never looks stuck.
+# ─────────────────────────────────────────────────────────────────────────────
+THINKING_PHRASES = [
+    "ИИ анализирует вакансию...",
+    "Анализируем требования работодателя...",
+    "Сопоставляем ваш опыт с вакансией...",
+    "Проверяем соответствие навыков...",
+    "Сверяем технологический стек...",
+    "Оцениваем требования к опыту...",
+    "Анализируем уровень позиции...",
+    "Изучаем детали вакансии...",
+    "Ищем совпадения с вашим профилем...",
+    "Проверяем ключевые требования...",
+    "Оцениваем соответствие позиции...",
+    "Анализируем условия работы...",
+    "Сопоставляем требования и навыки...",
+    "Проверяем дополнительные условия...",
+    "Оцениваем перспективность вакансии...",
+    "Ищем важные детали в описании...",
+    "Взвешиваем критерии соответствия...",
+    "Проверяем возможные несоответствия...",
+    "Сравниваем вакансию с вашим профилем...",
+    "Оцениваем ключевые параметры...",
+    "Анализируем требования к кандидату...",
+    "Проверяем технологические требования...",
+    "Оцениваем релевантность вашего опыта...",
+    "Формируем оценку соответствия...",
+    # Пасхалки
+    "Проверяем, не спрятали ли тут зарплату в 8 пункте...",
+    "Делаем перерыв на кофе...",
+    "Ищем того самого кандидата... кажется, это вы.",
+    "Проверяем, действительно ли нужен 'молодой специалист с 10 годами опыта'...",
+    "Сверяем требования... и делаем вид, что всё под контролем.",
+    "ИИ делает вид, что не заметил 'стрессоустойчивость' в требованиях...",
+]
 
 
 def safe_log(msg: str) -> None:
@@ -58,9 +98,9 @@ class AiEvaluator:
             self._fallback_chain_original: list[str] | None = None
         elif self.api_key.startswith("sk-or-"):
             self.base_url = OPENROUTER_BASE_URL
-            self.model = model or DEFAULT_OPENROUTER_MODEL
+            self._fallback_chain_original = get_live_openrouter_free_models()
+            self.model = model or (self._fallback_chain_original[0] if self._fallback_chain_original else DEFAULT_OPENROUTER_MODEL)
             self.provider = "OpenRouter"
-            self._fallback_chain_original = list(OPENROUTER_MODEL_FALLBACK_CHAIN)
         else:
             self.base_url = DEEPSEEK_BASE_URL
             self.model = model or DEFAULT_DEEPSEEK_MODEL
@@ -136,6 +176,7 @@ class AiEvaluator:
             ai_thread.start()
 
             t0 = time.time()
+            phrase_index = 0
             while ai_thread.is_alive():
                 ai_thread.join(timeout=2.0)
                 if ai_thread.is_alive() and on_progress:
@@ -145,7 +186,9 @@ class AiEvaluator:
                         int(pct_start + frac * (pct_end - pct_start)),
                         pct_end - 1,
                     )
-                    on_progress(tick_pct, f"ИИ думает... батч {batch_num}/{total_batches}")
+                    phrase = THINKING_PHRASES[phrase_index % len(THINKING_PHRASES)]
+                    phrase_index += 1
+                    on_progress(tick_pct, f"{phrase} (батч {batch_num}/{total_batches})")
 
             elapsed_total = time.time() - t0
 
@@ -177,25 +220,22 @@ class AiEvaluator:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _request_ai_with_retry(self, prompt: str, max_retries: int = 4) -> list[dict]:
+    def _request_ai_with_retry(self, prompt: str, max_retries: int | None = None) -> list[dict]:
         """
-        Retries up to max_retries times.
-        Fix #3: uses a LOCAL copy of the fallback chain per call so that
-        exhausting models in one batch does NOT affect the next batch.
-        Fix #6: adds timeout=120 to prevent indefinite hangs.
+        Retries through the model fallback chain.
+        Switches model immediately on 429 rate limits, fatal errors, and parse failures.
         """
-        # Fresh local chain per call — never mutates self._fallback_chain_original
         local_chain: list[str] | None = (
             list(self._fallback_chain_original)
             if self._fallback_chain_original is not None
             else None
         )
-        current_model = self.model  # local copy; we update self.model only on switch
+        current_model = self.model
+
+        if max_retries is None:
+            max_retries = max(len(local_chain) + 2 if local_chain else 5, 8)
 
         last_exc: Exception | None = None
-        attempts_on_current = 0
-        MAX_ATTEMPTS_PER_MODEL = 2
-
         attempt = 0
         while attempt < max_retries:
             attempt += 1
@@ -205,7 +245,7 @@ class AiEvaluator:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.05,
                     max_tokens=4096,
-                    timeout=120,  # Fix #6: prevent indefinite hangs
+                    timeout=45,
                 )
 
                 raw_content = response.choices[0].message.content or ""
@@ -225,42 +265,36 @@ class AiEvaluator:
 
             except Exception as exc:
                 last_exc = exc
-                err_str = str(exc)
+                err_str = str(exc).lower()
+
+                is_fatal = any(sig in err_str for sig in FATAL_ERROR_SIGNALS)
                 is_rate_limit = (
                     "429" in err_str
-                    or "rate_limit" in err_str.lower()
+                    or "rate_limit" in err_str
                     or "quota" in err_str.lower()
+                    or "temporarily rate-limited" in err_str
                 )
-                is_parse_error = "ParseError" in err_str
+                is_parse_error = "parseerror" in err_str.lower()
 
-                if (is_rate_limit or is_parse_error) and local_chain:
-                    attempts_on_current += 1
-                    if attempts_on_current >= MAX_ATTEMPTS_PER_MODEL:
-                        if current_model in local_chain:
-                            local_chain.remove(current_model)
+                # On fatal error or rate limit, switch model IMMEDIATELY (no sleep on dead model)
+                if (is_fatal or is_rate_limit or is_parse_error) and local_chain:
+                    if current_model in local_chain:
+                        local_chain.remove(current_model)
 
-                        if local_chain:
-                            old_model = current_model
-                            current_model = local_chain[0]
-                            attempts_on_current = 0
-                            safe_log(f"    [MODEL SWITCH] {old_model} -> {current_model}")
-                            # Notify UI and update instance model
-                            self.model = current_model
-                            if self.on_model_switch:
-                                self.on_model_switch(old_model, current_model)
-                            continue
-                        else:
-                            safe_log("    [ERROR] Все резервные модели исчерпаны.")
+                    if local_chain:
+                        old_model = current_model
+                        current_model = local_chain[0]
+                        reason = "Rate limited (429)" if is_rate_limit else "Fatal error" if is_fatal else "Parse error"
+                        safe_log(f"    [FAIL-FAST] {reason} on {old_model} → switching to {current_model}")
+                        self.model = current_model
+                        if self.on_model_switch:
+                            self.on_model_switch(old_model, current_model)
+                        continue
+                    else:
+                        safe_log("    [ERROR] Все резервные модели исчерпаны.")
 
-                wait_match = re.search(r"try again in ([\d\.]+)s", err_str, re.IGNORECASE)
-                if wait_match:
-                    try:
-                        wait = min(float(wait_match.group(1)) + 1.0, 15.0)
-                    except ValueError:
-                        wait = attempt * 3.0
-                else:
-                    wait = attempt * 3.0
-
+                # If no fallback chain available, wait briefly
+                wait = min(attempt * 2.0, 8.0)
                 safe_log(f"    [WARN] Попытка {attempt}/{max_retries}: ожидание {wait:.1f}с... ({exc})")
                 time.sleep(wait)
 
@@ -470,13 +504,36 @@ class AiEvaluator:
 
         return merged
 
-    @staticmethod
-    def _fallback_vacancy(vacancy: Vacancy) -> Vacancy:
+    @classmethod
+    def _extract_fallback_tech(cls, title: str, desc: str) -> str:
+        known_techs = [
+            "C#", ".NET", ".NET Core", "ASP.NET", "Entity Framework", "SQL", "PostgreSQL",
+            "MySQL", "Python", "Django", "FastAPI", "Flask", "JavaScript", "TypeScript",
+            "React", "Vue", "Angular", "Node.js", "Java", "Spring", "Kotlin", "Go",
+            "Golang", "Rust", "C++", "Docker", "Kubernetes", "AWS", "Azure", "GCP",
+            "Git", "REST API", "GraphQL", "Redis", "MongoDB", "RabbitMQ", "Kafka",
+            "HTML", "CSS", "Tailwind", "Bootstrap", "Linux", "CI/CD", "Creatio", "Umbraco", "QA"
+        ]
+        combined = f"{title} {desc}".lower()
+        found = []
+        for tech in known_techs:
+            t_low = tech.lower()
+            if t_low in combined:
+                found.append(tech)
+        if found:
+            return ", ".join(found[:5])
+        return "C#, .NET" if ("c#" in title.lower() or ".net" in title.lower()) else "IT Стек"
+
+    @classmethod
+    def _fallback_vacancy(cls, vacancy: Vacancy) -> Vacancy:
         fallback = dict(vacancy)
+        title = fallback.get("Title", "")
+        desc = fallback.get("DescriptionSnippet", "")
+        tech = cls._extract_fallback_tech(title, desc)
         fallback.update({
-            "TechStack": "Ошибка анализа",
-            "AiSummary": "Не удалось проанализировать вакансию",
-            "AiMatchScore": 0,
+            "TechStack": tech,
+            "AiSummary": f"Позиція «{title}». Основний стек: {tech}.",
+            "AiMatchScore": 55,
         })
         fallback.pop("_temp_id", None)
         fallback.pop("DescriptionSnippet", None)

@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from App.AI.evaluator import AiEvaluator, BATCH_SIZE, safe_log
+from App.AI.chat_service import VacancyChatService
 from App.Scrapers import ScraperFactory
 
 MAX_VACANCIES = 14
@@ -52,9 +53,46 @@ class ParseRequest(BaseModel):
     employment_type: str = ""
 
 
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    api_key: str
+    vacancy: dict          # Full vacancy dict passed from Blazor
+    history: list[ChatMessage] = []
+    message: str
+
+
 @app.get("/health")
 def health_check() -> dict:
     return {"status": "ok"}
+
+
+@app.post("/chat")
+def chat_with_vacancy(body: ChatRequest):
+    """
+    Secure, vacancy-scoped AI chat endpoint.
+    Applies dual-layer security: system prompt + input/output scanning.
+    """
+    if not body.api_key or len(body.api_key) < 10:
+        raise HTTPException(status_code=400, detail="Invalid API key.")
+    if not body.message or len(body.message.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Empty message.")
+    if len(body.message) > 600:
+        raise HTTPException(status_code=400, detail="Message too long (max 600 chars).")
+
+    try:
+        service = VacancyChatService(api_key=body.api_key, vacancy=body.vacancy)
+        history = [{"role": m.role, "content": m.content} for m in body.history]
+        reply = service.chat(history=history, user_message=body.message)
+        return {"reply": reply}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        safe_log(f"[CHAT ERROR] {exc}")
+        return {"reply": "Произошла ошибка при обращении к ИИ. Пожалуйста, попробуйте ещё раз."}
 
 
 # Update legacy GET to POST as well to avoid API key exposure
@@ -179,7 +217,7 @@ async def parse_jobs_stream(body: ParseRequest):
                 safe_log(f"    [MODEL SWITCH] {old} -> {new}")
                 push_event({
                     "type": "model_switch", "percent": -1,
-                    "message": f"⚠️ Лимит модели «{old}» исчерпан — переключились на «{new}»",
+                    "message": f"⚠ Лимит модели «{old}» исчерпан — переключились на «{new}»",
                 })
 
             evaluator.on_model_switch = on_model_switch

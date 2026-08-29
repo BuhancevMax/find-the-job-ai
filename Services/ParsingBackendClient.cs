@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -35,7 +36,16 @@ public interface IParsingBackendClient
         string englishLevel,
         string employmentType,
         CancellationToken ct = default);
+
+    Task<string> ChatAsync(
+        string apiKey,
+        Models.Vacancy vacancy,
+        List<ChatMessage> history,
+        string message,
+        CancellationToken ct = default);
 }
+
+public record ChatMessage(string Role, string Content);
 
 public class ParsingBackendClient(HttpClient httpClient, IConfiguration configuration) : IParsingBackendClient
 {
@@ -107,5 +117,50 @@ public class ParsingBackendClient(HttpClient httpClient, IConfiguration configur
                 yield return streamEvent;
             }
         }
+    }
+
+    public async Task<string> ChatAsync(
+        string apiKey,
+        Models.Vacancy vacancy,
+        List<ChatMessage> history,
+        string message,
+        CancellationToken ct = default)
+    {
+        string requestUrl = $"{_backendUrl}/chat";
+
+        // Serialize vacancy to a plain dictionary
+        var vacancyDict = new Dictionary<string, object?>
+        {
+            ["Title"]              = vacancy.Title,
+            ["Company"]            = vacancy.Company,
+            ["Url"]                = vacancy.Url,
+            ["Source"]             = vacancy.Source,
+            ["RequiredExperience"] = vacancy.RequiredExperience,
+            ["TechStack"]          = vacancy.TechStack,
+            ["AiSummary"]          = vacancy.AiSummary,
+        };
+
+        var payload = new
+        {
+            api_key = apiKey,
+            vacancy = vacancyDict,
+            history = history.Select(m => new { role = m.Role, content = m.Content }).ToList(),
+            message = message
+        };
+
+        var jsonBody = JsonSerializer.Serialize(payload);
+        using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+        var response = await _httpClient.PostAsync(requestUrl, content, ct).ConfigureAwait(false);
+        var responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+            return $"Ошибка сервера ({response.StatusCode}).";
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        using var doc = JsonDocument.Parse(responseBody);
+        return doc.RootElement.TryGetProperty("reply", out var replyEl)
+            ? replyEl.GetString() ?? "Нет ответа."
+            : "Нет ответа.";
     }
 }
