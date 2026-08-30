@@ -117,22 +117,19 @@ body::before {
   right: 2rem;
   top: 50%;
   transform: translateY(-50%);
-  width: 240px;
-  height: 140px;
+  width: 216px;
+  height: 112px;
   pointer-events: none;
   overflow: visible;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 /* ── Icon grid — 4×3 tech symbols ── */
 .icon-grid {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, 48px);
+  grid-template-rows: repeat(3, 32px);
   gap: 8px;
-  position: relative;
-  z-index: 1;
   width: 216px;
   height: 112px;
 }
@@ -152,6 +149,7 @@ body::before {
   letter-spacing: -0.03em;
   font-size: 0.72rem;
   user-select: none;
+  box-sizing: border-box;
   transition: transform 0.3s var(--transition-spring), background 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
 }
 
@@ -229,13 +227,13 @@ body::before {
   96%, 100%{ transform: scale(1); background: var(--card); color: var(--text-tertiary); border-color: var(--border); box-shadow: none; z-index: 1; }
 }
 
-/* ── Magnifier wrapper moving over the grid ── */
+/* ── Magnifier wrapper moving over the grid (1:1 coordinate space) ── */
 .magnifier-glass-wrap {
   position: absolute;
   top: 0;
   left: 0;
-  width: 80px;
-  height: 80px;
+  width: 100px;
+  height: 100px;
   z-index: 10;
   pointer-events: none;
   animation: mag-path 18s ease-in-out infinite;
@@ -243,26 +241,26 @@ body::before {
 }
 
 .magnifier-svg {
-  width: 100%;
-  height: 100%;
+  width: 100px;
+  height: 100px;
   display: block;
 }
 
-/* Precise optical alignment: lens center (32px, 32px) hits exact cell centers */
+/* Precise optical alignment: lens center (40px, 40px) hits exact cell centers */
 @keyframes mag-path {
-  0%, 6%   { transform: translate(-8px, -16px); }   /* C# (0,0) */
-  9%, 14%  { transform: translate(104px, 24px); }  /* SQL (2,1) */
-  17%, 22% { transform: translate(-8px, 64px); }   /* Docker (0,2) */
-  25%, 30% { transform: translate(48px, -16px); }  /* .NET (1,0) */
-  33%, 38% { transform: translate(160px, 24px); }  /* React (3,1) */
-  41%, 46% { transform: translate(48px, 24px); }   /* Py (1,1) */
-  49%, 54% { transform: translate(104px, 64px); }  /* Rust (2,2) */
-  57%, 62% { transform: translate(160px, -16px); } /* TS (3,0) */
-  65%, 70% { transform: translate(-8px, 24px); }   /* Go (0,1) */
-  73%, 78% { transform: translate(160px, 64px); }  /* AWS (3,2) */
-  81%, 86% { transform: translate(104px, -16px); } /* JS (2,0) */
-  89%, 94% { transform: translate(48px, 64px); }   /* K8s (1,2) */
-  97%, 100%{ transform: translate(-8px, -16px); }  /* C# (0,0) */
+  0%, 6%   { transform: translate(-16px, -24px); } /* C# (0,0) */
+  9%, 14%  { transform: translate(96px, 16px); }   /* SQL (2,1) */
+  17%, 22% { transform: translate(-16px, 56px); }  /* Docker (0,2) */
+  25%, 30% { transform: translate(40px, -24px); }  /* .NET (1,0) */
+  33%, 38% { transform: translate(152px, 16px); }  /* React (3,1) */
+  41%, 46% { transform: translate(40px, 16px); }   /* Py (1,1) */
+  49%, 54% { transform: translate(96px, 56px); }   /* Rust (2,2) */
+  57%, 62% { transform: translate(152px, -24px); } /* TS (3,0) */
+  65%, 70% { transform: translate(-16px, 16px); }  /* Go (0,1) */
+  73%, 78% { transform: translate(152px, 56px); }  /* AWS (3,2) */
+  81%, 86% { transform: translate(96px, -24px); }  /* JS (2,0) */
+  89%, 94% { transform: translate(40px, 56px); }   /* K8s (1,2) */
+  97%, 100%{ transform: translate(-16px, -24px); } /* C# (0,0) */
 }
 
 
@@ -836,35 +834,177 @@ input[type="password"].form-control { letter-spacing: 0.1em; }
 .page-ellipsis { color: var(--text-tertiary); font-size: 0.8rem; padding: 0 0.25rem; }
 
 /* ============================================================
-   TINDER MODE
+   SALARY INPUT WRAP
+   ============================================================ */
+.salary-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.salary-prefix {
+  position: absolute;
+  left: 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+.salary-input {
+  padding-left: 1.5rem !important;
+  font-weight: 600;
+}
+
+/* ============================================================
+   TINDER MODE (2-Layer Stack with Stamps)
    ============================================================ */
 .tinder-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2rem 1.5rem;
+  padding: 1.5rem 1rem;
   min-height: 50vh;
 }
 
 .tinder-counter {
   font-size: 0.8rem;
   color: var(--text-tertiary);
-  font-weight: 500;
+  font-weight: 600;
   margin-bottom: 1.25rem;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
+}
+
+.tinder-deck {
+  position: relative;
+  width: 100%;
+  max-width: 580px;
+  min-height: 320px;
+  perspective: 1000px;
 }
 
 .tinder-card {
+  position: relative;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 2rem;
   width: 100%;
-  max-width: 580px;
   box-shadow: var(--shadow-md);
-  animation: spring-in 0.35s var(--transition-spring) both;
+  overflow: hidden;
+  user-select: none;
 }
-.tinder-card.top-match { border-left: 3px solid var(--accent); }
+.tinder-card.top-match { border-left: 3.5px solid var(--accent); }
+
+/* Top Active Card */
+.tinder-card-top {
+  position: relative;
+  z-index: 2;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.35s ease,
+              background-color 0.25s ease,
+              border-color 0.25s ease,
+              box-shadow 0.25s ease;
+  will-change: transform, opacity;
+}
+
+/* Under Card (Behind Active) */
+.tinder-card-under {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  transform: scale(0.95) translateY(12px);
+  opacity: 0.65;
+  filter: blur(0.5px);
+  pointer-events: none;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.35s ease,
+              filter 0.35s ease;
+  will-change: transform, opacity;
+}
+
+.tinder-card-under.promoting {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  filter: blur(0);
+}
+
+/* Stamps */
+.tinder-stamp {
+  position: absolute;
+  top: 1.25rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: 8px;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-width: 3px;
+  border-style: solid;
+  opacity: 0;
+  transform: scale(0.6) rotate(0deg);
+  transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.tinder-stamp-like {
+  right: 1.25rem;
+  color: #10B981;
+  border-color: #10B981;
+  background: rgba(16, 185, 129, 0.15);
+  transform: rotate(12deg) scale(0.7);
+}
+
+.tinder-stamp-nope {
+  left: 1.25rem;
+  color: #EF4444;
+  border-color: #EF4444;
+  background: rgba(239, 68, 68, 0.15);
+  transform: rotate(-12deg) scale(0.7);
+}
+
+/* Swiping Left (Dislike / Red Stamp + Red Glow) */
+.tinder-card-top.swiping-left {
+  transform: translateX(-140%) rotate(-20deg) scale(0.9) !important;
+  opacity: 0 !important;
+  background: rgba(254, 242, 242, 0.98) !important;
+  border-color: #EF4444 !important;
+  box-shadow: 0 20px 45px rgba(239, 68, 68, 0.4) !important;
+}
+
+.tinder-card-top.swiping-left .tinder-stamp-nope {
+  opacity: 1;
+  transform: rotate(-14deg) scale(1.1);
+}
+
+[data-theme="dark"] .tinder-card-top.swiping-left {
+  background: rgba(69, 10, 10, 0.98) !important;
+  border-color: #DC2626 !important;
+  box-shadow: 0 20px 45px rgba(220, 38, 38, 0.5) !important;
+}
+
+/* Swiping Right (Like / Green Stamp + Green Glow) */
+.tinder-card-top.swiping-right {
+  transform: translateX(140%) rotate(20deg) scale(0.9) !important;
+  opacity: 0 !important;
+  background: rgba(236, 253, 245, 0.98) !important;
+  border-color: #10B981 !important;
+  box-shadow: 0 20px 45px rgba(16, 185, 129, 0.4) !important;
+}
+
+.tinder-card-top.swiping-right .tinder-stamp-like {
+  opacity: 1;
+  transform: rotate(14deg) scale(1.1);
+}
+
+[data-theme="dark"] .tinder-card-top.swiping-right {
+  background: rgba(69, 10, 10, 0.98) !important;
+  border-color: #059669 !important;
+  box-shadow: 0 20px 45px rgba(5, 150, 105, 0.5) !important;
+}
 
 .tinder-job-title {
   font-size: 1.5rem;
@@ -1330,6 +1470,99 @@ input[type="password"].form-control { letter-spacing: 0.1em; }
   text-align: center;
   padding: 0.35rem 1.5rem 0.65rem;
   background: var(--card);
+}
+
+/* ── OpenRouter Info Popover / Tooltip ── */
+.openrouter-info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.openrouter-info-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--accent-subtle);
+  transition: all 0.15s ease;
+  user-select: none;
+  font-weight: 500;
+}
+
+.openrouter-info-btn:hover,
+.openrouter-info-btn:focus {
+  color: var(--accent-text);
+  background: rgba(5, 150, 105, 0.18);
+  outline: none;
+}
+
+.openrouter-info-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 290px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+[data-theme="dark"] .openrouter-info-popover {
+  background: rgba(24, 24, 27, 0.96);
+  border-color: var(--border);
+}
+
+.openrouter-info-wrap:hover .openrouter-info-popover,
+.openrouter-info-wrap:focus-within .openrouter-info-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.openrouter-info-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.openrouter-info-desc {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem 0;
+}
+
+.openrouter-info-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.openrouter-info-link:hover {
+  text-decoration: underline;
 }
 
 

@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import TypedDict
 
 
@@ -29,8 +30,6 @@ class AIEvaluation(TypedDict):
     ExtractedExperience: str
 
 
-from dataclasses import dataclass
-
 @dataclass(frozen=True)
 class JobCriteria:
     target_role: str
@@ -41,3 +40,17 @@ class JobCriteria:
     work_format: str = ""
     english_level: str = ""
     employment_type: str = ""
+    stacks: list[str] = field(default_factory=list)
+
+    def get_stack_list(self) -> list[str]:
+        """Return list of distinct stack tokens."""
+        if self.stacks:
+            return [s.strip() for s in self.stacks if s.strip()]
+        if self.target_stack:
+            return [s.strip() for s in self.target_stack.split(",") if s.strip()]
+        return []
+
+    def is_remote(self) -> bool:
+        """Check if work format specifies remote."""
+        wf = (self.work_format or "").lower()
+        return "remote" in wf or "удален" in wf or "віддален" in wf or "дистанц" in wf

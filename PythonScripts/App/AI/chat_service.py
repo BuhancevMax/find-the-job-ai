@@ -21,10 +21,7 @@ from openai import OpenAI
 
 from App.config import (
     OPENROUTER_BASE_URL,
-    GROQ_BASE_URL,
     DEFAULT_OPENROUTER_MODEL,
-    DEFAULT_GROQ_MODEL,
-    OPENROUTER_MODEL_FALLBACK_CHAIN,
     FATAL_ERROR_SIGNALS,
     get_live_openrouter_free_models,
 )
@@ -132,14 +129,9 @@ class VacancyChatService:
         self.vacancy = vacancy
         self._system_prompt = _build_system_prompt(vacancy)
 
-        if self.api_key.startswith("gsk_"):
-            self._base_url = GROQ_BASE_URL
-            self._model = DEFAULT_GROQ_MODEL
-        else:
-            self._base_url = OPENROUTER_BASE_URL
-            self._fallback_chain = get_live_openrouter_free_models()
-            self._model = self._fallback_chain[0] if self._fallback_chain else DEFAULT_OPENROUTER_MODEL
-
+        self._base_url = OPENROUTER_BASE_URL
+        self._fallback_chain = get_live_openrouter_free_models()
+        self._model = self._fallback_chain[0] if self._fallback_chain else DEFAULT_OPENROUTER_MODEL
         self._client = OpenAI(api_key=self.api_key, base_url=self._base_url)
 
     def chat(self, history: list[dict], user_message: str) -> str:
@@ -186,13 +178,19 @@ class VacancyChatService:
         last_error = ""
         for model in chain:
             try:
-                response = self._client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=1024,
-                    timeout=30,
-                )
+                kwargs: dict = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "max_tokens": 1024,
+                    "timeout": 30,
+                }
+                if self.api_key.startswith("sk-or-"):
+                    server_fallbacks = [m for m in chain if m != model][:2]
+                    if server_fallbacks:
+                        kwargs["extra_body"] = {"models": server_fallbacks}
+
+                response = self._client.chat.completions.create(**kwargs)
                 return response.choices[0].message.content or _SAFE_REFUSAL
 
             except Exception as exc:

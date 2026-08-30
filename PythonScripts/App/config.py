@@ -4,28 +4,24 @@ import time
 import urllib.request
 
 
-# Base URLs for OpenAI-compatible providers
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+# Base URL for OpenRouter
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
-DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OpenRouter fallback chain — verified active free models (fastest/most reliable first)
 # Sourced from live OpenRouter API
 # ─────────────────────────────────────────────────────────────────────────────
 OPENROUTER_MODEL_FALLBACK_CHAIN = [
-    "poolside/laguna-s-2.1:free",               # Fast, tested in benchmark (13.7s)
-    "google/gemma-4-31b-it:free",               # High quality instruction-following
-    "google/gemma-4-26b-a4b-it:free",           # Fast MoE model
-    "nvidia/nemotron-3.5-lightning:free",       # High throughput
-    "nvidia/nemotron-3-super-120b-a12b:free",   # Stable backup
-    "minimax/minimax-m2.7:free",                # Backup
-    "cohere/north-mini-code:free",              # Code understanding
-    "z-ai/glm-5.2:free",                        # General backup
-    "liquid/lfm-2.5-2.6b:free",                 # Lightweight
+    "minimax/minimax-m3:free",                                # 2-6s (Fastest & Accurate JSON)
+    "dots-studio/dots-3-note-preview:free",                   # ~8s
+    "inclusionai/ling-3.0-flash-fin:free",                    # ~8.9s
+    "poolside/laguna-s-2.1:free",                             # ~9.7s
+    "cohere/north-mini-code:free",                            # ~10.6s
+    "minimax/minimax-m2.7:free",                              # ~11.5s
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",     # ~12.7s
+    "poolside/laguna-xs-2.1:free",                            # ~13.5s
+    "nvidia/nemotron-3-super-120b-a12b:free",                 # ~15.4s
+    "openrouter/free",                                        # Native OpenRouter Free Router
 ]
 DEFAULT_OPENROUTER_MODEL = OPENROUTER_MODEL_FALLBACK_CHAIN[0]
 
@@ -99,6 +95,9 @@ FATAL_ERROR_SIGNALS = [
     "404",
     "403",
     "401",
+    "400",
+    "bad request",
+    "must have 3 items",
     "connection refused",
     "name or service not known",
     "the model does not exist",

@@ -4,274 +4,169 @@ import requests
 from bs4 import BeautifulSoup
 
 from App.config import DEFAULT_PAGE_TIMEOUT, SCRAPER_USER_AGENT
-from App.models import Vacancy
+from App.models import Vacancy, JobCriteria
 from App.Scrapers.base import BaseScraper
 
 
 class DjinniScraper(BaseScraper):
-    """Scraper for Djinni."""
+    """Scraper for Djinni with multi-filter and category support."""
 
     CATEGORY_MAP = {
-        # --- .NET / C# ---
+        # .NET / C#
         "c#": "dotnet",
-        "с#": "dotnet",  # Cyrillic C
+        "с#": "dotnet",
         "csharp": "dotnet",
         "c-sharp": "dotnet",
         ".net": "dotnet",
         "dotnet": "dotnet",
-        "dot net": "dotnet",
-        ".net core": "dotnet",
-        ".net framework": "dotnet",
         "asp.net": "dotnet",
         "blazor": "dotnet",
         "wpf": "dotnet",
-        "entity framework": "dotnet",
-        "c# developer": "dotnet",
-        "c# розробник": "dotnet",
-        "c# разработчик": "dotnet",
-        "c# programmer": "dotnet",
-        "c# програміст": "dotnet",
-        ".net developer": "dotnet",
-        ".net розробник": "dotnet",
-        ".net разработчик": "dotnet",
-        "dotnet developer": "dotnet",
         "c#/.net": "dotnet",
 
-        # --- Python ---
+        # Python
         "python": "python",
         "py": "python",
-        "python3": "python",
-        "python developer": "python",
-        "python розробник": "python",
-        "python разработчик": "python",
-        "питон": "python",
-        "пайтон": "python",
         "django": "python",
-        "flask": "python",
         "fastapi": "python",
 
-        # --- JavaScript / TypeScript / Frontend ---
+        # JavaScript / Frontend
         "javascript": "javascript",
         "js": "javascript",
         "typescript": "javascript",
         "ts": "javascript",
-        "frontend": "frontend",
-        "front-end": "frontend",
-        "фронтенд": "frontend",
-        "фронт-енд": "frontend",
-        "react": "react",
-        "react.js": "react",
-        "reactjs": "react",
-        "node": "nodejs",
-        "nodejs": "nodejs",
-        "node.js": "nodejs",
-        "vue": "vuejs",
-        "vue.js": "vuejs",
-        "vuejs": "vuejs",
-        "angular": "angular",
-        "angular.js": "angular",
-        "svelte": "frontend",
-        "next.js": "react",
-        "nuxt": "vuejs",
-        "html/css": "frontend",
-        "web developer": "frontend",
-        "веб розробник": "frontend",
-        "веб-разработчик": "frontend",
+        "react": "react_native",  # Djinni has javascript/frontend/react
+        "vue": "javascript",
+        "angular": "javascript",
+        "frontend": "javascript",
 
-        # --- Java / Kotlin / Android ---
+        # Java / Kotlin
         "java": "java",
-        "джава": "java",
-        "ява": "java",
-        "java developer": "java",
-        "spring": "java",
-        "spring boot": "java",
-        "kotlin": "android",  # Or separate to 'kotlin' depending on your logic
+        "kotlin": "kotlin",
         "android": "android",
-        "андроид": "android",
-        "андроїд": "android",
-        "android developer": "android",
-
-        # --- iOS / Swift / Mobile ---
-        "ios": "ios",
         "swift": "ios",
-        "objective-c": "ios",
-        "apple": "ios",
-        "ios developer": "ios",
-        "flutter": "mobile_crossplatform",
-        "dart": "mobile_crossplatform",
-        "react native": "mobile_crossplatform",
-        "mobile": "mobile",
-        "мобильный разработчик": "mobile",
+        "ios": "ios",
+        "flutter": "flutter",
 
-        # --- Go / Rust / PHP / C++ / Ruby ---
-        "golang": "golang",
+        # Go / Rust / C++ / PHP
         "go": "golang",
-        "go developer": "golang",
+        "golang": "golang",
         "rust": "rust",
         "php": "php",
-        "пхп": "php",
         "laravel": "php",
-        "symfony": "php",
         "c++": "cpp",
-        "с++": "cpp",  # Cyrillic C
         "cpp": "cpp",
-        "c/c++": "cpp",
-        "c": "c",
-        "с": "c",      # Cyrillic C
         "ruby": "ruby",
-        "ruby on rails": "ruby",
-        "ror": "ruby",
 
-        # --- GameDev ---
-        "gamedev": "gamedev",
-        "геймдев": "gamedev",
-        "game developer": "gamedev",
-        "разработчик игр": "gamedev",
-        "розробник ігор": "gamedev",
-        "unity": "unity",
-        "unity3d": "unity",
-        "unity developer": "unity",
-        "unreal engine": "unreal_engine",
-        "ue": "unreal_engine",
-        "ue4": "unreal_engine",
-        "ue5": "unreal_engine",
+        # SQL / Data
+        "sql": "sql",
+        "data engineer": "data_engineer",
 
-        # --- QA / Testing ---
+        # QA
         "qa": "qa",
-        "qa engineer": "qa",
         "qa manual": "qa",
-        "manual qa": "qa",
         "qa automation": "qa_automation",
         "aqa": "qa_automation",
-        "auto qa": "qa_automation",
-        "тестировщик": "qa",
-        "тестувальник": "qa",
-        "software tester": "qa",
-        "sdet": "qa_automation",
-        "qc": "qa",
 
-        # --- DevOps / SysAdmin / Cloud ---
+        # DevOps
         "devops": "devops",
-        "девопс": "devops",
-        "devops engineer": "devops",
-        "sysadmin": "sysadmin",
-        "системный администратор": "sysadmin",
-        "системний адміністратор": "sysadmin",
-        "сисадмин": "sysadmin",
-        "aws": "devops",
-        "azure": "devops",
-        "gcp": "devops",
         "docker": "devops",
         "kubernetes": "devops",
-        "k8s": "devops",
-        "site reliability engineer": "devops",
-        "sre": "devops",
-
-        # --- Data / Databases ---
-        "data science": "data_science",
-        "data scientist": "data_science",
-        "data engineer": "data_engineer",
-        "data analyst": "data_analyst",
-        "machine learning": "ml",
-        "ml": "ml",
-        "ai": "ai",
-        "artificial intelligence": "ai",
-        "sql": "database",
-        "dba": "database",
-        "database administrator": "database",
-        "базы данных": "database",
-        "postgresql": "database",
-        "mysql": "database",
-        "mongodb": "database",
-
-        # --- Design ---
-        "ui/ux": "design",
-        "ui ux": "design",
-        "ui/ux designer": "design",
-        "design": "design",
-        "дизайн": "design",
-        "дизайнер": "design",
-        "web designer": "design",
-        "graphic designer": "design",
-        "figma": "design",
-
-        # --- Management / Analytics ---
-        "project manager": "project_manager",
-        "pm": "project_manager",
-        "пм": "project_manager",
-        "product manager": "product_manager",
-        "scrum master": "scrum_master",
-        "business analyst": "business_analyst",
-        "ba": "business_analyst",
-        "бизнес-аналитик": "business_analyst",
-        "бізнес-аналітик": "business_analyst",
-
-        # --- HR / Recruiting ---
-        "hr": "hr",
-        "recruiter": "recruiter",
-        "рекрутер": "recruiter",
-        "talent acquisition": "recruiter",
-
-        # --- Other / General ---
-        "software engineer": "software_engineer",
-        "fullstack": "fullstack",
-        "full stack": "fullstack",
-        "full-stack": "fullstack",
-        "программист": "software_engineer",
-        "програміст": "software_engineer",
-        "developer": "software_engineer"
+        "aws": "devops",
     }
 
     @staticmethod
-    def _normalize_keyword(keyword: str) -> str:
-        """Normalize keyword: fix Cyrillic C#, strip extra spaces."""
-        text = keyword.strip().lower()
-        # Replace Cyrillic 'с'/'С' with Latin 'c'/'C' near # or ++
-        text = re.sub(r'[сС](?=[#\+])', 'c', text)
-        return " ".join(text.split())
+    def _normalize_token(text: str) -> str:
+        t = text.strip().lower()
+        t = re.sub(r'[сС](?=[#\+])', 'c', t)
+        return " ".join(t.split())
 
-    def fetch_jobs(self, keyword: str) -> list[Vacancy]:
-        clean_key = self._normalize_keyword(keyword)
+    def _map_experience(self, exp_str: str) -> str | None:
+        low = exp_str.lower()
+        if "без" in low or "студент" in low or "trainee" in low:
+            return "no_exp"
+        if "1-3" in low or "1 год" in low or "2 года" in low or "2 роки" in low:
+            return "1y"
+        if "3-5" in low or "3 года" in low or "4 года" in low:
+            return "3y"
+        if "5" in low:
+            return "5y"
+        return None
 
-        # Check if keyword matches a direct category on Djinni
-        if clean_key in self.CATEGORY_MAP:
-            params = {"primary_keyword": self.CATEGORY_MAP[clean_key]}
-        else:
-            # Check if any category token is contained in the query
-            matched_cat = None
-            for key_token, cat_slug in self.CATEGORY_MAP.items():
-                if key_token in clean_key:
-                    matched_cat = cat_slug
-                    break
+    def fetch_jobs(self, keyword: str, criteria: JobCriteria | None = None) -> list[Vacancy]:
+        raw_stacks = criteria.get_stack_list() if criteria else [s.strip() for s in keyword.split(",") if s.strip()]
+        if not raw_stacks and keyword:
+            raw_stacks = [keyword.strip()]
 
-            if matched_cat:
-                params = {"primary_keyword": matched_cat}
+        # Determine Djinni primary_keywords
+        matched_categories: list[str] = []
+        for stack_item in raw_stacks:
+            clean = self._normalize_token(stack_item)
+            if clean in self.CATEGORY_MAP:
+                cat = self.CATEGORY_MAP[clean]
+                if cat not in matched_categories:
+                    matched_categories.append(cat)
             else:
-                # Use all_keywords (with underscore) for general full-text search
-                params = {"all_keywords": keyword.strip()}
+                for key_token, cat_slug in self.CATEGORY_MAP.items():
+                    if key_token in clean and cat_slug not in matched_categories:
+                        matched_categories.append(cat_slug)
+                        break
 
-        response = requests.get(
-            "https://djinni.co/jobs/",
-            headers={"User-Agent": SCRAPER_USER_AGENT},
-            params=params,
-            timeout=DEFAULT_PAGE_TIMEOUT,
-        )
+        params: dict = {}
+        if matched_categories:
+            params["primary_keyword"] = matched_categories if len(matched_categories) > 1 else matched_categories[0]
+        else:
+            params["all_keywords"] = keyword.strip()
 
-        print(f"[Djinni] URL: {response.url}")
-        response.raise_for_status()
+        # Add experience and remote parameters
+        if criteria:
+            exp_code = self._map_experience(criteria.target_exp)
+            if exp_code:
+                params["exp_level"] = exp_code
+            if criteria.is_remote():
+                params["employment"] = "remote"
+
+        jobs = self._execute_query(params)
+
+        # Soft fallback: if strict filters returned < 5 jobs, relax exp_level
+        if len(jobs) < 5 and "exp_level" in params:
+            relaxed_params = dict(params)
+            del relaxed_params["exp_level"]
+            relaxed_jobs = self._execute_query(relaxed_params)
+            existing_urls = {j.get("Url") for j in jobs}
+            for rj in relaxed_jobs:
+                if rj.get("Url") not in existing_urls:
+                    jobs.append(rj)
+                    existing_urls.add(rj.get("Url"))
+
+        return jobs
+
+    def _execute_query(self, params: dict) -> list[Vacancy]:
+        try:
+            response = requests.get(
+                "https://djinni.co/jobs/",
+                headers={"User-Agent": SCRAPER_USER_AGENT},
+                params=params,
+                timeout=DEFAULT_PAGE_TIMEOUT,
+            )
+            print(f"[Djinni] URL: {response.url}")
+            if response.status_code != 200:
+                return []
+        except Exception as e:
+            print(f"[Djinni] Ошибка запроса: {e}")
+            return []
 
         soup = BeautifulSoup(response.text, "html.parser")
         jobs_data = []
 
+        # 1. Parse JSON-LD structured data
         for tag in soup.find_all("script", type="application/ld+json"):
             try:
                 raw = tag.string or tag.get_text()
                 data = json.loads(raw)
-
                 if isinstance(data, list):
                     jobs_data.extend(
-                        item
-                        for item in data
+                        item for item in data
                         if isinstance(item, dict) and item.get("@type") == "JobPosting"
                     )
                 elif isinstance(data, dict) and data.get("@type") == "JobPosting":
@@ -279,47 +174,64 @@ class DjinniScraper(BaseScraper):
             except (json.JSONDecodeError, TypeError):
                 continue
 
-        return self._normalize_data(jobs_data)
+        if jobs_data:
+            return self._normalize_json_ld(jobs_data)
+
+        # 2. HTML fallback
+        return self._normalize_html_cards(soup)
 
     @staticmethod
-    def _normalize_data(raw_data: list[dict]) -> list[Vacancy]:
+    def _normalize_json_ld(raw_data: list[dict]) -> list[Vacancy]:
         normalized: list[Vacancy] = []
-
         for idx, job in enumerate(raw_data):
             exp_data = job.get("experienceRequirements", {})
-            months = (
-                exp_data.get("monthsOfExperience", 0)
-                if isinstance(exp_data, dict)
-                else 0
-            )
+            months = exp_data.get("monthsOfExperience", 0) if isinstance(exp_data, dict) else 0
 
             if months == 0:
-                req_exp = "Без опыта"
+                req_exp = "без опыта"
             elif months < 12:
-                req_exp = f"{int(months)} месяцев"
-            elif months % 12 == 0:
-                req_exp = f"{int(months // 12)} лет/год(а)"
+                req_exp = "до 1 года"
             else:
-                req_exp = f"{int(months)} месяцев"
+                years = int(months // 12)
+                unit = "год" if (years % 10 == 1 and years % 100 != 11) else "года" if (2 <= years % 10 <= 4 and (years % 100 < 10 or years % 100 >= 20)) else "лет"
+                req_exp = f"{years} {unit}"
 
-            organization = job.get("hiringOrganization", {})
-            company = (
-                organization.get("name", "Неизвестно")
-                if isinstance(organization, dict)
-                else "Неизвестно"
-            )
+            org = job.get("hiringOrganization", {})
+            company = org.get("name", "Неизвестно") if isinstance(org, dict) else "Неизвестно"
 
-            normalized.append(
-                {
-                    "_temp_id": idx,
-                    "Title": job.get("title", "Без названия"),
-                    "Company": company,
-                    "Url": job.get("url", ""),
-                    "RequiredExperience": req_exp,
-                    "DescriptionSnippet": " ".join(
-                        str(job.get("description", "")).split()
-                    )[:1200],
-                }
-            )
+            normalized.append({
+                "_temp_id": idx,
+                "Title": job.get("title", "Без названия"),
+                "Company": company,
+                "Url": job.get("url", ""),
+                "RequiredExperience": req_exp,
+                "DescriptionSnippet": " ".join(str(job.get("description", "")).split())[:1200],
+            })
+        return normalized
 
+    @staticmethod
+    def _normalize_html_cards(soup: BeautifulSoup) -> list[Vacancy]:
+        normalized: list[Vacancy] = []
+        cards = soup.find_all("li", class_=lambda c: c and "list-jobs__item" in c)
+        for idx, card in enumerate(cards):
+            title_tag = card.find("a", class_=lambda c: c and "job-list-item__link" in c) or card.find("a", class_="profile")
+            if not title_tag:
+                continue
+            title = title_tag.get_text(strip=True)
+            url = title_tag.get("href", "")
+            if url and not url.startswith("http"):
+                url = "https://djinni.co" + url
+            company_tag = card.find("a", class_=lambda c: c and "job-list-item__company" in c)
+            company = company_tag.get_text(strip=True) if company_tag else "Неизвестно"
+            desc_tag = card.find("div", class_=lambda c: c and "job-list-item__description" in c)
+            desc = desc_tag.get_text(" ", strip=True) if desc_tag else ""
+
+            normalized.append({
+                "_temp_id": idx,
+                "Title": title,
+                "Company": company,
+                "Url": url,
+                "RequiredExperience": "",
+                "DescriptionSnippet": desc[:1200],
+            })
         return normalized

@@ -1,4 +1,5 @@
 import json
+import random
 import re
 import threading
 import time
@@ -8,30 +9,25 @@ from openai import OpenAI
 
 from App.AI.prompt_loader import load_prompt
 from App.config import (
-    DEFAULT_DEEPSEEK_MODEL,
-    DEFAULT_GROQ_MODEL,
     DEFAULT_OPENROUTER_MODEL,
     OPENROUTER_MODEL_FALLBACK_CHAIN,
     get_live_openrouter_free_models,
-    DEEPSEEK_BASE_URL,
-    EXPERIENCE_WEIGHT,
-    GROQ_BASE_URL,
-    LEVEL_WEIGHT,
     OPENROUTER_BASE_URL,
     ROLE_WEIGHT,
+    LEVEL_WEIGHT,
     TECH_WEIGHT,
+    EXPERIENCE_WEIGHT,
     FATAL_ERROR_SIGNALS,
 )
-from App.models import Vacancy, JobCriteria
+from App.models import Vacancy, JobCriteria, AIEvaluation
 
-BATCH_SIZE = 7
+BATCH_SIZE = 5
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Rotating loading phrases — cycled every ~2s while AI is thinking.
 # Adds life to the progress bar so it never looks stuck.
 # ─────────────────────────────────────────────────────────────────────────────
 THINKING_PHRASES = [
-    "ИИ анализирует вакансию...",
     "Анализируем требования работодателя...",
     "Сопоставляем ваш опыт с вакансией...",
     "Проверяем соответствие навыков...",
@@ -78,8 +74,8 @@ def safe_log(msg: str) -> None:
 
 class AiEvaluator:
     """
-    Evaluates vacancies in batches via an OpenAI-compatible LLM.
-    For OpenRouter: auto-switches to slower fallback model on 429 or parse error.
+    Evaluates vacancies in batches via OpenRouter free LLMs.
+    Auto-switches to fallback model on 429 or parse error.
     """
 
     def __init__(self, api_key: str, model: str | None = None):
@@ -90,22 +86,10 @@ class AiEvaluator:
         # Callback fired when a model switch happens (streaming mode)
         self.on_model_switch: Callable[[str, str], None] | None = None
 
-        if self.api_key.startswith("gsk_"):
-            self.base_url = GROQ_BASE_URL
-            self.model = model or DEFAULT_GROQ_MODEL
-            self.provider = "Groq"
-            # Immutable original chain — used to restore per-call
-            self._fallback_chain_original: list[str] | None = None
-        elif self.api_key.startswith("sk-or-"):
-            self.base_url = OPENROUTER_BASE_URL
-            self._fallback_chain_original = get_live_openrouter_free_models()
-            self.model = model or (self._fallback_chain_original[0] if self._fallback_chain_original else DEFAULT_OPENROUTER_MODEL)
-            self.provider = "OpenRouter"
-        else:
-            self.base_url = DEEPSEEK_BASE_URL
-            self.model = model or DEFAULT_DEEPSEEK_MODEL
-            self.provider = "DeepSeek"
-            self._fallback_chain_original = None
+        self.base_url = OPENROUTER_BASE_URL
+        self._fallback_chain_original = get_live_openrouter_free_models()
+        self.model = model or (self._fallback_chain_original[0] if self._fallback_chain_original else DEFAULT_OPENROUTER_MODEL)
+        self.provider = "OpenRouter"
 
         self.client = OpenAI(
             api_key=self.api_key,
@@ -127,7 +111,7 @@ class AiEvaluator:
 
         on_progress(percent: int, message: str) is called:
           - at start of each batch (pct_start)
-          - every ~2s while the AI is thinking (smooth crawl)
+          - every ~2s while the AI is thinking (smooth crawl with random non-repeating phrase)
           - at end of each batch (pct_end)
         """
         if not vacancies:
@@ -138,6 +122,15 @@ class AiEvaluator:
         evaluated_vacancies: list[Vacancy] = []
 
         safe_log(f"[AI] Анализируем {total} вакансий через {self.provider} ({self.model})...")
+
+        last_phrase_idx: int = -1
+
+        def pick_random_phrase() -> str:
+            nonlocal last_phrase_idx
+            available = [i for i in range(len(THINKING_PHRASES)) if i != last_phrase_idx]
+            chosen_idx = random.choice(available) if available else 0
+            last_phrase_idx = chosen_idx
+            return THINKING_PHRASES[chosen_idx]
 
         for batch_num in range(1, total_batches + 1):
             start = (batch_num - 1) * BATCH_SIZE
@@ -176,7 +169,6 @@ class AiEvaluator:
             ai_thread.start()
 
             t0 = time.time()
-            phrase_index = 0
             while ai_thread.is_alive():
                 ai_thread.join(timeout=2.0)
                 if ai_thread.is_alive() and on_progress:
@@ -186,8 +178,7 @@ class AiEvaluator:
                         int(pct_start + frac * (pct_end - pct_start)),
                         pct_end - 1,
                     )
-                    phrase = THINKING_PHRASES[phrase_index % len(THINKING_PHRASES)]
-                    phrase_index += 1
+                    phrase = pick_random_phrase()
                     on_progress(tick_pct, f"{phrase} (батч {batch_num}/{total_batches})")
 
             elapsed_total = time.time() - t0
@@ -240,13 +231,20 @@ class AiEvaluator:
         while attempt < max_retries:
             attempt += 1
             try:
-                response = self.client.chat.completions.create(
-                    model=current_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.05,
-                    max_tokens=4096,
-                    timeout=45,
-                )
+                kwargs: dict = {
+                    "model": current_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.05,
+                    "max_tokens": 4096,
+                    "timeout": 45,
+                }
+                # Native OpenRouter server-side fallback array (OpenRouter limit: max 3 total models)
+                if self.provider == "OpenRouter" and local_chain:
+                    server_fallbacks = [m for m in local_chain if m != current_model][:2]
+                    if server_fallbacks:
+                        kwargs["extra_body"] = {"models": server_fallbacks}
+
+                response = self.client.chat.completions.create(**kwargs)
 
                 raw_content = response.choices[0].message.content or ""
 
@@ -428,7 +426,7 @@ class AiEvaluator:
         clean = stripper.get_text()
         clean = " ".join(clean.split())
         clean = clean.replace('"', "'")
-        return clean[:350]
+        return clean[:1200]
 
     @classmethod
     def _build_batch_text(cls, vacancies: list[Vacancy]) -> str:
@@ -437,8 +435,11 @@ class AiEvaluator:
             tid = v.get("_temp_id", 0)
             title = v.get("Title", "")
             exp = v.get("RequiredExperience", "")
+            stack = v.get("TechStack", "")
             desc = cls._sanitize_text(v.get("DescriptionSnippet", "") or "")
-            parts.append(f"[ID: {tid}] Должность: {title} | Опыт: {exp} | Описание: {desc}")
+            stack_info = f" | Стек: {stack}" if stack else ""
+            exp_info = f" | Опыт: {exp}" if exp else ""
+            parts.append(f"[ID: {tid}] Должность: {title}{stack_info}{exp_info} | Описание: {desc}")
         return "\n".join(parts)
 
     @staticmethod
@@ -487,15 +488,26 @@ class AiEvaluator:
                 continue
 
             updated = dict(vac)
-            tech = res.get("TechStack", "")
-            if isinstance(tech, list):
-                tech = ", ".join(str(t) for t in tech)
-            updated["TechStack"] = str(tech) or "Не указано"
+            ai_tech = res.get("TechStack", "")
+            if isinstance(ai_tech, list):
+                ai_tech = ", ".join(str(t) for t in ai_tech)
+            ai_tech_str = str(ai_tech).strip()
+
+            # Preserve scraper tags if AI returned empty / generic
+            orig_stack = updated.get("TechStack", "").strip()
+            if ai_tech_str and ai_tech_str not in ("Не указано", "не указано", "-"):
+                updated["TechStack"] = ai_tech_str
+            elif orig_stack:
+                updated["TechStack"] = orig_stack
+            else:
+                updated["TechStack"] = cls._extract_fallback_tech(updated.get("Title", ""), vac.get("DescriptionSnippet", ""))
+
             updated["AiSummary"] = str(res.get("AiSummary", "Не удалось проанализировать"))
             updated["AiMatchScore"] = cls._calculate_score(res)
 
             extracted_exp = str(res.get("ExtractedExperience", "")).strip()
-            if updated.get("RequiredExperience") == "Смотреть в описании" and extracted_exp:
+            current_exp = updated.get("RequiredExperience", "").strip()
+            if (not current_exp or current_exp in ("Смотреть в описании", "Не указано", "не указан")) and extracted_exp and extracted_exp not in ("Не указано", "-"):
                 updated["RequiredExperience"] = extracted_exp
 
             updated.pop("_temp_id", None)

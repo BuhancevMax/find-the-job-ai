@@ -105,8 +105,21 @@ def parse_jobs(platform: str, body: ParseRequest):
     )
 
     try:
+        from App.models import JobCriteria
+        criteria = JobCriteria(
+            target_role=body.target_role,
+            target_exp=body.target_exp,
+            target_stack=body.keyword,
+            language=body.language,
+            salary_expectations=body.salary_expectations,
+            work_format=body.work_format,
+            english_level=body.english_level,
+            employment_type=body.employment_type,
+            stacks=[s.strip() for s in body.keyword.split(",") if s.strip()],
+        )
+
         scraper = ScraperFactory.get_scraper(platform)
-        raw_vacancies = scraper.fetch_jobs(body.keyword)[:MAX_VACANCIES]
+        raw_vacancies = scraper.fetch_jobs(body.keyword, criteria=criteria)[:MAX_VACANCIES]
 
         safe_log(f"[INFO] Найдено вакансий: {len(raw_vacancies)}")
 
@@ -119,14 +132,6 @@ def parse_jobs(platform: str, body: ParseRequest):
             }
 
         evaluator = AiEvaluator(api_key=body.api_key)
-
-        from App.models import JobCriteria
-        criteria = JobCriteria(
-            target_role=body.target_role,
-            target_exp=body.target_exp,
-            target_stack=body.keyword,
-            language=body.language,
-        )
 
         final_vacancies = evaluator.evaluate_vacancies(
             raw_vacancies,
@@ -166,13 +171,26 @@ async def parse_jobs_stream(body: ParseRequest):
         safe_log(f"\n[START] Платформы: {platforms_str} | Запрос: '{body.keyword}' | Язык: {body.language}")
         push_event({"type": "progress", "percent": 5, "message": f"Сбор вакансий: {platforms_str}..."})
 
+        from App.models import JobCriteria
+        criteria = JobCriteria(
+            target_role=body.target_role,
+            target_exp=body.target_exp,
+            target_stack=body.keyword,
+            language=body.language,
+            salary_expectations=body.salary_expectations,
+            work_format=body.work_format,
+            english_level=body.english_level,
+            employment_type=body.employment_type,
+            stacks=[s.strip() for s in body.keyword.split(",") if s.strip()],
+        )
+
         try:
-            # 1. Сбор со всех платформ
+            # 1. Сбор со всех платформ с передачей мультифильтров
             raw_vacancies = []
             for plat in body.platforms:
                 try:
                     scraper = ScraperFactory.get_scraper(plat)
-                    jobs = scraper.fetch_jobs(body.keyword)[:MAX_VACANCIES]
+                    jobs = scraper.fetch_jobs(body.keyword, criteria=criteria)[:MAX_VACANCIES]
                     for j in jobs:
                         j["Source"] = plat
                     raw_vacancies.extend(jobs)

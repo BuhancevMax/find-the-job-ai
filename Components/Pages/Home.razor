@@ -34,24 +34,24 @@
             <div class="icon-cell icon-cell-k8s">K8s</div>
             <div class="icon-cell icon-cell-rust">Rust</div>
             <div class="icon-cell icon-cell-aws">AWS</div>
-        </div>
 
-        <!-- Realistic SVG magnifying glass with metallic rim & glare -->
-        <div class="magnifier-glass-wrap">
-            <svg class="magnifier-svg" viewBox="0 0 100 100" fill="none">
-                <!-- Drop shadow -->
-                <circle cx="40" cy="40" r="32" fill="rgba(0, 0, 0, 0.04)" />
-                <!-- Ergonomic dark handle -->
-                <path d="M63 63 L88 88" stroke="#1E293B" stroke-width="9" stroke-linecap="round" />
-                <path d="M63 63 L88 88" stroke="#475569" stroke-width="5" stroke-linecap="round" />
-                <path d="M63 63 L70 70" stroke="#059669" stroke-width="7" stroke-linecap="round" />
-                <!-- Metallic emerald rim -->
-                <circle cx="40" cy="40" r="32" stroke="#059669" stroke-width="4.5" fill="rgba(240, 253, 244, 0.12)" />
-                <!-- Specular white highlight ring -->
-                <circle cx="40" cy="40" r="29.5" stroke="rgba(255, 255, 255, 0.5)" stroke-width="1.5" fill="none" />
-                <!-- Glass glare arc reflection -->
-                <path d="M19 32 A22 22 0 0 1 46 18" stroke="rgba(255, 255, 255, 0.85)" stroke-width="2.5" stroke-linecap="round" />
-            </svg>
+            <!-- Realistic SVG magnifying glass with metallic rim & glare -->
+            <div class="magnifier-glass-wrap">
+                <svg class="magnifier-svg" viewBox="0 0 100 100" fill="none">
+                    <!-- Drop shadow -->
+                    <circle cx="40" cy="40" r="32" fill="rgba(0, 0, 0, 0.04)" />
+                    <!-- Ergonomic dark handle -->
+                    <path d="M63 63 L88 88" stroke="#1E293B" stroke-width="9" stroke-linecap="round" />
+                    <path d="M63 63 L88 88" stroke="#475569" stroke-width="5" stroke-linecap="round" />
+                    <path d="M63 63 L70 70" stroke="#059669" stroke-width="7" stroke-linecap="round" />
+                    <!-- Metallic emerald rim -->
+                    <circle cx="40" cy="40" r="32" stroke="#059669" stroke-width="4.5" fill="rgba(240, 253, 244, 0.12)" />
+                    <!-- Specular white highlight ring -->
+                    <circle cx="40" cy="40" r="29.5" stroke="rgba(255, 255, 255, 0.5)" stroke-width="1.5" fill="none" />
+                    <!-- Glass glare arc reflection -->
+                    <path d="M19 32 A22 22 0 0 1 46 18" stroke="rgba(255, 255, 255, 0.85)" stroke-width="2.5" stroke-linecap="round" />
+                </svg>
+            </div>
         </div>
     </div>
 </div>
@@ -62,14 +62,33 @@
 <div class="filter-panel">
     <!-- Row 1: API Key + Search -->
     <div class="filter-row mb-3" style="gap: 0.75rem; align-items: flex-end;">
-        <div class="filter-group" style="flex: 1; min-width: 220px;">
-            <label class="filter-label">API Key</label>
+        <div class="filter-group" style="flex: 1; min-width: 240px;">
+            <div class="d-flex align-items-center justify-content-between">
+                <label class="filter-label">OpenRouter API Key</label>
+                <div class="openrouter-info-wrap">
+                    <span class="openrouter-info-btn" tabindex="0">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                        Почему OpenRouter?
+                    </span>
+                    <div class="openrouter-info-popover">
+                        <div class="openrouter-info-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                            </svg>
+                            Бесплатный ИИ-анализ
+                        </div>
+                        <p class="openrouter-info-desc">
+                            Сервис предоставляет доступ к передовым бесплатным (<strong>:free</strong>) моделям без привязки банковских карт и абонентской платы. Ключ генерируется за 1 клик.
+                        </p>
+                    </div>
+                </div>
+            </div>
             <input type="password" class="form-control" style="width: 100%;" 
-                   @bind="apiKey" @bind:event="oninput" placeholder="gsk_… или sk-or-v1-…" />
+                   @bind="apiKey" @bind:event="oninput" placeholder="sk-or-v1-…" />
             <div class="api-hint">
-                Groq: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>
-                &nbsp;&middot;&nbsp;
-                OpenRouter: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
+                Получить ключ: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
             </div>
         </div>
 
@@ -113,9 +132,16 @@
             </select>
         </div>
 
-        <div class="filter-group" style="width: 115px;">
-            <label class="filter-label">Зарплата</label>
-            <input type="text" class="form-control" @bind="salaryExpectations" placeholder="$ от…" />
+        <div class="filter-group" style="width: 125px;">
+            <label class="filter-label">Зарплата ($)</label>
+            <div class="salary-input-wrap">
+                <span class="salary-prefix">$</span>
+                <input type="text" class="form-control salary-input" 
+                       value="@salaryExpectations" 
+                       @oninput="OnSalaryInput" 
+                       placeholder="2500" 
+                       maxlength="6" />
+            </div>
         </div>
 
         <button class="btn btn-search" @onclick="StartParsing" disabled="@IsButtonDisabled" style="align-self: flex-end; height: 36px;">
@@ -153,7 +179,7 @@
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
                     </svg>
-                    Выбрано @selectedPlatforms.Count платформы — поиск и детальный ИИ-анализ могут занять 2–4 мин.
+                    Выбрано @selectedPlatforms.Count платформы — поиск и детальный ИИ-анализ может занять больше времени.
                 </span>
             }
         </div>
@@ -447,59 +473,111 @@
             <div class="tinder-wrap">
                 @if (currentTinderIndex < displayVacancies.Count)
                 {
-                    var vac = displayVacancies[currentTinderIndex];
-                    bool isTop = vac.AiMatchScore >= 90;
-                    string sourceClass = GetSourceClass(vac.Source);
-                    string sourceDomain = GetSourceDomain(vac.Source);
-                    var circ2 = 2 * 3.14159 * 20;
-                    var offset2 = circ2 * (1 - vac.AiMatchScore / 100.0);
-                    var ringClass2 = vac.AiMatchScore >= 70 ? "ring-high" : vac.AiMatchScore >= 40 ? "ring-med" : "ring-low";
-
                     <div class="tinder-counter">@(currentTinderIndex + 1) из @displayVacancies.Count</div>
 
-                    <div class="tinder-card @(isTop ? "top-match" : "")">
-                        <div class="d-flex align-items-center justify-content-between mb-3">
-                            <span class="source-badge @sourceClass">
-                                <img src="https://www.google.com/s2/favicons?domain=@sourceDomain&sz=16" alt="@vac.Source" />
-                                @vac.Source
-                            </span>
-                            <div class="score-ring-wrap">
-                                <svg viewBox="0 0 44 44">
-                                    <circle class="score-ring-bg" cx="22" cy="22" r="20"/>
-                                    <circle class="score-ring-fill @ringClass2" cx="22" cy="22" r="20"
-                                            stroke-dasharray="@(circ2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
-                                            stroke-dashoffset="@(offset2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
-                                            transform="rotate(-90 22 22)"/>
-                                </svg>
-                                <div class="score-value">@vac.AiMatchScore</div>
-                            </div>
-                        </div>
-
-                        <a href="@vac.Url" target="_blank" class="tinder-job-title mb-2">@vac.Title</a>
-
-                        <div class="d-flex gap-3 mt-2 mb-3" style="font-size: 0.8rem; color: var(--text-secondary);">
-                            <span>@FormatExperience(vac.RequiredExperience)</span>
-                            <span style="color: var(--accent); font-weight: 500;">@FormatTechStack(vac)</span>
-                        </div>
-
-                        @if (!string.IsNullOrEmpty(vac.AiSummary))
+                    <div class="tinder-deck">
+                        @* Under Card (Next in queue) *@
+                        @if (currentTinderIndex + 1 < displayVacancies.Count)
                         {
-                            <div style="font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
-                                @vac.AiSummary
+                            var nextVac = displayVacancies[currentTinderIndex + 1];
+                            bool nextTop = nextVac.AiMatchScore >= 90;
+                            string nextSourceClass = GetSourceClass(nextVac.Source);
+                            string nextSourceDomain = GetSourceDomain(nextVac.Source);
+                            var circNext = 2 * 3.14159 * 20;
+                            var offsetNext = circNext * (1 - nextVac.AiMatchScore / 100.0);
+                            var ringNext = nextVac.AiMatchScore >= 70 ? "ring-high" : nextVac.AiMatchScore >= 40 ? "ring-med" : "ring-low";
+
+                            <div class="tinder-card tinder-card-under @(isTinderAnimating ? "promoting" : "") @(nextTop ? "top-match" : "")">
+                                <div class="d-flex align-items-center justify-content-between mb-3">
+                                    <span class="source-badge @nextSourceClass">
+                                        <img src="https://www.google.com/s2/favicons?domain=@nextSourceDomain&sz=16" alt="@nextVac.Source" />
+                                        @nextVac.Source
+                                    </span>
+                                    <div class="score-ring-wrap">
+                                        <svg viewBox="0 0 44 44">
+                                            <circle class="score-ring-bg" cx="22" cy="22" r="20"/>
+                                            <circle class="score-ring-fill @ringNext" cx="22" cy="22" r="20"
+                                                    stroke-dasharray="@(circNext.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                                    stroke-dashoffset="@(offsetNext.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                                    transform="rotate(-90 22 22)"/>
+                                        </svg>
+                                        <div class="score-value">@nextVac.AiMatchScore</div>
+                                    </div>
+                                </div>
+
+                                <div class="tinder-job-title mb-2">@nextVac.Title</div>
+
+                                <div class="d-flex gap-3 mt-2 mb-3" style="font-size: 0.8rem; color: var(--text-secondary);">
+                                    <span>@FormatExperience(nextVac.RequiredExperience)</span>
+                                    <span style="color: var(--accent); font-weight: 500;">@FormatTechStack(nextVac)</span>
+                                </div>
+
+                                @if (!string.IsNullOrEmpty(nextVac.AiSummary))
+                                {
+                                    <div style="font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
+                                        @nextVac.AiSummary
+                                    </div>
+                                }
                             </div>
                         }
+
+                        @* Active Top Card *@
+                        @{
+                            var vac = displayVacancies[currentTinderIndex];
+                            bool isTop = vac.AiMatchScore >= 90;
+                            string sourceClass = GetSourceClass(vac.Source);
+                            string sourceDomain = GetSourceDomain(vac.Source);
+                            var circ2 = 2 * 3.14159 * 20;
+                            var offset2 = circ2 * (1 - vac.AiMatchScore / 100.0);
+                            var ringClass2 = vac.AiMatchScore >= 70 ? "ring-high" : vac.AiMatchScore >= 40 ? "ring-med" : "ring-low";
+                        }
+                        <div class="tinder-card tinder-card-top @(isTop ? "top-match" : "") @tinderAnimClass">
+                            <div class="tinder-stamp tinder-stamp-like">ЛАЙК</div>
+                            <div class="tinder-stamp tinder-stamp-nope">БЛОК</div>
+
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <span class="source-badge @sourceClass">
+                                    <img src="https://www.google.com/s2/favicons?domain=@sourceDomain&sz=16" alt="@vac.Source" />
+                                    @vac.Source
+                                </span>
+                                <div class="score-ring-wrap">
+                                    <svg viewBox="0 0 44 44">
+                                        <circle class="score-ring-bg" cx="22" cy="22" r="20"/>
+                                        <circle class="score-ring-fill @ringClass2" cx="22" cy="22" r="20"
+                                                stroke-dasharray="@(circ2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                                stroke-dashoffset="@(offset2.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture))"
+                                                transform="rotate(-90 22 22)"/>
+                                    </svg>
+                                    <div class="score-value">@vac.AiMatchScore</div>
+                                </div>
+                            </div>
+
+                            <a href="@vac.Url" target="_blank" class="tinder-job-title mb-2">@vac.Title</a>
+
+                            <div class="d-flex gap-3 mt-2 mb-3" style="font-size: 0.8rem; color: var(--text-secondary);">
+                                <span>@FormatExperience(vac.RequiredExperience)</span>
+                                <span style="color: var(--accent); font-weight: 500;">@FormatTechStack(vac)</span>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(vac.AiSummary))
+                            {
+                                <div style="font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
+                                    @vac.AiSummary
+                                </div>
+                            }
+                        </div>
                     </div>
 
                     <div class="tinder-actions">
                         <!-- Dislike = to blacklist -->
-                        <button class="tinder-btn tinder-btn-dislike" @onclick="() => TinderDislike(vac)" title="В чёрный список">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <button class="tinder-btn tinder-btn-dislike" @onclick="() => TinderDislike(vac)" disabled="@isTinderAnimating" title="В чёрный список">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                             </svg>
                         </button>
                         <!-- Like = save -->
-                        <button class="tinder-btn tinder-btn-like" @onclick="() => TinderLike(vac)" title="В избранное">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <button class="tinder-btn tinder-btn-like" @onclick="() => TinderLike(vac)" disabled="@isTinderAnimating" title="В избранное">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                             </svg>
                         </button>
@@ -850,17 +928,38 @@ else if (hasLoaded && !isLoading)
     // ============================================================
     // Tinder
     // ============================================================
+    private string tinderAnimClass = "";
+    private bool isTinderAnimating = false;
+
     private async Task TinderLike(BlazorApp1.Models.Vacancy vac)
     {
+        if (isTinderAnimating || vac == null) return;
+        isTinderAnimating = true;
+        tinderAnimClass = "swiping-right";
+        StateHasChanged();
+
+        await Task.Delay(300);
+
         if (!vac.IsSaved) await ToggleSave(vac);
         currentTinderIndex++;
+        tinderAnimClass = "";
+        isTinderAnimating = false;
+        StateHasChanged();
     }
 
-    private Task TinderDislike(BlazorApp1.Models.Vacancy vac)
+    private async Task TinderDislike(BlazorApp1.Models.Vacancy vac)
     {
+        if (isTinderAnimating || vac == null) return;
+        isTinderAnimating = true;
+        tinderAnimClass = "swiping-left";
+        StateHasChanged();
+
+        await Task.Delay(300);
+
         AddToBlacklist(vac);
-        // don't increment — the vacancy is removed from displayVacancies so next item slides to same index
-        return Task.CompletedTask;
+        tinderAnimClass = "";
+        isTinderAnimating = false;
+        StateHasChanged();
     }
 
     // ============================================================
@@ -977,35 +1076,70 @@ else if (hasLoaded && !isLoading)
         }
     }
 
+    private void OnSalaryInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        salaryExpectations = new string(val.Where(char.IsDigit).ToArray());
+    }
+
     // ============================================================
     // Format helpers (Strict display)
     // ============================================================
     private string FormatExperience(string? exp)
     {
         if (string.IsNullOrWhiteSpace(exp))
-            return "Опыт: не указан";
+            return "Опыт: в описании";
 
         var trimmed = exp.Trim();
         if (trimmed.StartsWith("Опыт:", StringComparison.OrdinalIgnoreCase))
-            return trimmed;
+            trimmed = trimmed.Substring(5).Trim();
 
-        var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"^(\d+)\s*(?:лет/год\(а\)|лет|года|год|роки|років|рік)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (match.Success)
-        {
-            int years = int.Parse(match.Groups[1].Value);
-            string unit = (years % 10 == 1 && years % 100 != 11) ? "год" :
-                          (years % 10 >= 2 && years % 10 <= 4 && (years % 100 < 10 || years % 100 >= 20)) ? "года" : "лет";
-            return $"Опыт: {years} {unit}";
-        }
+        var tLow = trimmed.ToLowerInvariant();
 
-        if (trimmed.Equals("Смотреть в описании", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("в описании", StringComparison.OrdinalIgnoreCase))
-            return "Опыт: в описании";
-
-        if (trimmed.Contains("без", StringComparison.OrdinalIgnoreCase) && trimmed.Contains("опыт", StringComparison.OrdinalIgnoreCase))
+        if (tLow.Contains("без") || tLow.Contains("no experience") || tLow.Contains("trainee") || tLow.Contains("студент"))
             return "Опыт: без опыта";
 
-        return $"Опыт: {trimmed}";
+        if (tLow.Contains("в описі") || tLow.Contains("в описании") || tLow == "не указано" || tLow == "не указан")
+            return "Опыт: в описании";
+
+        // 0.5 year / 6 months / 0.5 року
+        if (System.Text.RegularExpressions.Regex.IsMatch(tLow, @"(0[.,]5|пів|пол|6\s*міс|6\s*мес)"))
+            return "Опыт: до 1 года";
+
+        // Range: "1-3 года", "1-3 роки", "2-5 years", "1–3y"
+        var rangeMatch = System.Text.RegularExpressions.Regex.Match(tLow, @"(\d+)\s*[-–]\s*(\d+)");
+        if (rangeMatch.Success)
+            return $"Опыт: {rangeMatch.Groups[1].Value}-{rangeMatch.Groups[2].Value} года";
+
+        // "5+ years", "5+ лет", "3+ роки"
+        var plusMatch = System.Text.RegularExpressions.Regex.Match(tLow, @"(\d+)\s*\+");
+        if (plusMatch.Success)
+        {
+            int n = int.Parse(plusMatch.Groups[1].Value);
+            string unit = n == 1 ? "год" : (n >= 2 && n <= 4) ? "года" : "лет";
+            return $"Опыт: {n}+ {unit}";
+        }
+
+        // "от X лет", "від X років", "from X years"
+        var fromMatch = System.Text.RegularExpressions.Regex.Match(tLow, @"(?:від|от|from|більше|более)\s*(\d+)");
+        if (fromMatch.Success)
+        {
+            int n = int.Parse(fromMatch.Groups[1].Value);
+            string unit = n == 1 ? "года" : "лет";
+            return $"Опыт: от {n} {unit}";
+        }
+
+        // Single digit e.g. "1 year", "2 роки", "5 years", "5 лет"
+        var numMatch = System.Text.RegularExpressions.Regex.Match(tLow, @"\b(\d+)\b");
+        if (numMatch.Success)
+        {
+            int n = int.Parse(numMatch.Groups[1].Value);
+            string unit = (n % 10 == 1 && n % 100 != 11) ? "год" :
+                          (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? "года" : "лет";
+            return $"Опыт: {n} {unit}";
+        }
+
+        return "Опыт: в описании";
     }
 
     private string FormatTechStack(BlazorApp1.Models.Vacancy vac)
@@ -1165,13 +1299,16 @@ else if (hasLoaded && !isLoading)
     private string loadingStatusText = "Поиск вакансий...";
     private System.Threading.CancellationTokenSource? loadingCts;
 
+    private bool isSearching = false;
+
     private async Task StartParsing()
     {
-        isLoading = true; errorMessage = ""; modelSwitchWarning = "";
+        if (isLoading || isSearching) return;
+        isLoading = true; isSearching = true; errorMessage = ""; modelSwitchWarning = "";
         elapsedSeconds = 0; progressPercent = 5;
         loadingStatusText = $"Поиск на {string.Join(", ", selectedPlatforms.Select(p => p.ToUpper()))}...";
 
-        loadingCts = new System.Threading.CancellationTokenSource();
+        loadingCts = new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(4));
         var ct = loadingCts.Token;
 
         using var timer = new System.Timers.Timer(1000);
@@ -1211,7 +1348,7 @@ else if (hasLoaded && !isLoading)
                     progressPercent = 100; loadingStatusText = "Анализ завершён";
                     showCompletionAnim = true;
                     await InvokeAsync(StateHasChanged);
-                    await Task.Delay(2500, ct); // Let orb-pulse play (3 × 0.7s = 2.1s + buffer)
+                    try { await Task.Delay(2500, ct); } catch (OperationCanceledException) { }
                     showCompletionAnim = false;
 
                     if (ev.Status == "success" && ev.Data != null && ev.Data.Any())
@@ -1226,11 +1363,19 @@ else if (hasLoaded && !isLoading)
                 }
             }
         }
-        catch (Exception ex) { errorMessage = $"Ошибка соединения с сервером Python: {ex.Message}"; }
+        catch (OperationCanceledException)
+        {
+            errorMessage = "Поиск отменён или превышено время ожидания сервера (таймаут 4 мин).";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Ошибка соединения с сервером Python: {ex.Message}";
+        }
         finally
         {
+            timer.Stop();
             loadingCts?.Cancel(); loadingCts?.Dispose(); loadingCts = null;
-            isLoading = false; timer.Stop();
+            isLoading = false; isSearching = false;
             await InvokeAsync(StateHasChanged);
         }
     }
