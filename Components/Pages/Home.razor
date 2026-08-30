@@ -762,9 +762,7 @@ else if (hasLoaded && !isLoading)
     private int currentTinderIndex = 0;
 
     // Summary expansion
-    private HashSet<int> expandedSummaries = new();
-
-    // Blacklist
+    private HashSet<int> dismissedCompletionCardIds = new();
     private List<BlazorApp1.Models.Vacancy> blacklistVacancies = new();
     private bool showBlacklist = false;
 
@@ -916,14 +914,7 @@ else if (hasLoaded && !isLoading)
         return "google.com";
     }
 
-    // ============================================================
-    // Summary expand/collapse
-    // ============================================================
-    private void ToggleSummary(int id)
-    {
-        if (expandedSummaries.Contains(id)) expandedSummaries.Remove(id);
-        else expandedSummaries.Add(id);
-    }
+
 
     // ============================================================
     // Tinder
@@ -1215,7 +1206,7 @@ else if (hasLoaded && !isLoading)
     // ============================================================
     // Pagination
     // ============================================================
-    private void GoToPage(int p) { currentPage = p; expandedSummaries.Clear(); }
+    private void GoToPage(int p) { currentPage = p; }
     private void PrevPage() { if (currentPage > 1) GoToPage(currentPage - 1); }
     private void NextPage() { if (currentPage < totalPages) GoToPage(currentPage + 1); }
 

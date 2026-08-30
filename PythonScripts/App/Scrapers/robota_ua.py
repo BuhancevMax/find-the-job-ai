@@ -1,12 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
-import re
 import requests
 from bs4 import BeautifulSoup
 
 from App.config import DEFAULT_PAGE_TIMEOUT, SCRAPER_USER_AGENT
 from App.models import Vacancy, JobCriteria
 from App.Scrapers.base import BaseScraper
-from App.Scrapers.workua import extract_exp_from_text
+from App.utils import safe_log, clean_tech_token, normalize_experience_text
 
 
 def _fetch_single_robota_details(vac_id: str) -> tuple[list[str], str, str]:
@@ -22,7 +21,7 @@ def _fetch_single_robota_details(vac_id: str) -> tuple[list[str], str, str]:
         raw_desc = data.get("description", "") or ""
         soup = BeautifulSoup(raw_desc, "html.parser")
         desc = soup.get_text(" ", strip=True)
-        exp = extract_exp_from_text(desc)
+        exp = normalize_experience_text(desc)
         return tags, desc, exp
     except Exception:
         return [], "", ""
@@ -30,12 +29,6 @@ def _fetch_single_robota_details(vac_id: str) -> tuple[list[str], str, str]:
 
 class RobotaUaScraper(BaseScraper):
     """Scraper for Robota.ua via their public search API with details enrichment."""
-
-    @staticmethod
-    def _clean_token(token: str) -> str:
-        t = token.strip()
-        t = re.sub(r'[сС](?=[#\+])', 'C', t)
-        return t
 
     def _map_experience(self, exp_str: str) -> int | None:
         low = exp_str.lower()
@@ -54,7 +47,7 @@ class RobotaUaScraper(BaseScraper):
         if not raw_stacks and keyword:
             raw_stacks = [keyword.strip()]
 
-        cleaned_tokens = [self._clean_token(s) for s in raw_stacks if s]
+        cleaned_tokens = [clean_tech_token(s) for s in raw_stacks if s]
         search_query = " ".join(cleaned_tokens[:3]) if cleaned_tokens else keyword.strip()
 
         params: dict = {
@@ -102,7 +95,7 @@ class RobotaUaScraper(BaseScraper):
                 vac["TechStack"] = ", ".join(tags)
             if full_desc:
                 vac["DescriptionSnippet"] = full_desc[:1500]
-            if exp:
+            if exp and exp != "в описании":
                 vac["RequiredExperience"] = exp
             vac.pop("_raw_id", None)
 
@@ -115,12 +108,12 @@ class RobotaUaScraper(BaseScraper):
                 params=params,
                 timeout=DEFAULT_PAGE_TIMEOUT,
             )
-            print(f"[Robota.ua] URL: {response.url}")
+            safe_log(f"[Robota.ua] URL: {response.url}")
             if response.status_code != 200:
                 return []
             data = response.json()
         except Exception as e:
-            print(f"[Robota.ua] Ошибка API: {e}")
+            safe_log(f"[Robota.ua] Ошибка API: {e}")
             return []
 
         jobs: list[Vacancy] = []
@@ -136,7 +129,7 @@ class RobotaUaScraper(BaseScraper):
             if doc.get("salary"):
                 salary = f"{doc['salary']} {doc.get('salaryCurrency', '')}"
 
-            card_exp = extract_exp_from_text(desc)
+            card_exp = normalize_experience_text(desc)
 
             jobs.append({
                 "_temp_id": idx,

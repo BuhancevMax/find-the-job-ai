@@ -4,6 +4,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
+from html.parser import HTMLParser
 
 from openai import OpenAI
 
@@ -19,13 +20,13 @@ from App.config import (
     EXPERIENCE_WEIGHT,
     FATAL_ERROR_SIGNALS,
 )
-from App.models import Vacancy, JobCriteria, AIEvaluation
+from App.models import Vacancy, JobCriteria
+from App.utils import safe_log, normalize_experience_text
 
 BATCH_SIZE = 5
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Rotating loading phrases — cycled every ~2s while AI is thinking.
-# Adds life to the progress bar so it never looks stuck.
 # ─────────────────────────────────────────────────────────────────────────────
 THINKING_PHRASES = [
     "Анализируем требования работодателя...",
@@ -51,7 +52,6 @@ THINKING_PHRASES = [
     "Проверяем технологические требования...",
     "Оцениваем релевантность вашего опыта...",
     "Формируем оценку соответствия...",
-    # Пасхалки
     "Проверяем, не спрятали ли тут зарплату в 8 пункте...",
     "Делаем перерыв на кофе...",
     "Ищем того самого кандидата... кажется, это вы.",
@@ -61,21 +61,24 @@ THINKING_PHRASES = [
 ]
 
 
-def safe_log(msg: str) -> None:
-    """Safely print messages on any Windows console encoding."""
-    try:
-        print(msg)
-    except UnicodeEncodeError:
-        try:
-            print(msg.encode("ascii", errors="replace").decode("ascii"))
-        except Exception:
-            pass
+class _Stripper(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.reset()
+        self.fed = []
+
+    def handle_data(self, d):
+        self.fed.append(d)
+
+    def get_text(self):
+        return "".join(self.fed)
 
 
 class AiEvaluator:
     """
     Evaluates vacancies in batches via OpenRouter free LLMs.
-    Auto-switches to fallback model on 429 or parse error.
+    Auto-switches to fallback model on 429 rate limits, fatal errors, or parse errors.
+    Retains dead model registry across batches to prevent recurring failures.
     """
 
     def __init__(self, api_key: str, model: str | None = None):
@@ -83,12 +86,11 @@ class AiEvaluator:
             raise ValueError("API key не указан.")
 
         self.api_key = api_key.strip()
-        # Callback fired when a model switch happens (streaming mode)
         self.on_model_switch: Callable[[str, str], None] | None = None
-
         self.base_url = OPENROUTER_BASE_URL
-        self._fallback_chain_original = get_live_openrouter_free_models()
-        self.model = model or (self._fallback_chain_original[0] if self._fallback_chain_original else DEFAULT_OPENROUTER_MODEL)
+        self._dead_models: set[str] = set()
+        self._fallback_chain_original: list[str] = get_live_openrouter_free_models()
+        self.model: str = model or (self._fallback_chain_original[0] if self._fallback_chain_original else DEFAULT_OPENROUTER_MODEL)
         self.provider = "OpenRouter"
 
         self.client = OpenAI(
@@ -107,12 +109,7 @@ class AiEvaluator:
         on_progress: Callable[[int, str], None] | None = None,
     ) -> list[Vacancy]:
         """
-        Evaluate all vacancies, processing them in batches.
-
-        on_progress(percent: int, message: str) is called:
-          - at start of each batch (pct_start)
-          - every ~2s while the AI is thinking (smooth crawl with random non-repeating phrase)
-          - at end of each batch (pct_end)
+        Evaluate all vacancies in batches with progress notifications.
         """
         if not vacancies:
             return []
@@ -136,7 +133,7 @@ class AiEvaluator:
             start = (batch_num - 1) * BATCH_SIZE
             batch_raw = vacancies[start: start + BATCH_SIZE]
 
-            # Fix #8: use dict copy so original list is never mutated
+            # Copy dict so original input list is never mutated
             batch = [{**vac, "_temp_id": start + idx} for idx, vac in enumerate(batch_raw)]
 
             vacancies_text = self._build_batch_text(batch)
@@ -155,7 +152,6 @@ class AiEvaluator:
                     f"(вакансии {start + 1}–{min(start + len(batch), total)})...",
                 )
 
-            # --- Run AI call in a thread; tick progress while waiting ---
             result_holder: list = []
             error_holder: list = []
 
@@ -203,7 +199,7 @@ class AiEvaluator:
                 )
 
             if start + BATCH_SIZE < total:
-                time.sleep(1.0)
+                time.sleep(0.5)
 
         return evaluated_vacancies
 
@@ -215,16 +211,19 @@ class AiEvaluator:
         """
         Retries through the model fallback chain.
         Switches model immediately on 429 rate limits, fatal errors, and parse failures.
+        Never retries models already known to be dead in this session.
         """
-        local_chain: list[str] | None = (
-            list(self._fallback_chain_original)
-            if self._fallback_chain_original is not None
-            else None
-        )
+        local_chain: list[str] = [m for m in self._fallback_chain_original if m not in self._dead_models]
+        if not local_chain:
+            local_chain = list(self._fallback_chain_original)
+            self._dead_models.clear()
+
+        if self.model in self._dead_models and local_chain:
+            self.model = local_chain[0]
         current_model = self.model
 
         if max_retries is None:
-            max_retries = max(len(local_chain) + 2 if local_chain else 5, 8)
+            max_retries = max(len(local_chain) + 2, 6)
 
         last_exc: Exception | None = None
         attempt = 0
@@ -236,19 +235,17 @@ class AiEvaluator:
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.05,
                     "max_tokens": 4096,
-                    "timeout": 45,
+                    "timeout": 35,
                 }
-                # Native OpenRouter server-side fallback array (OpenRouter limit: max 3 total models)
-                if self.provider == "OpenRouter" and local_chain:
-                    server_fallbacks = [m for m in local_chain if m != current_model][:2]
+                if local_chain:
+                    server_fallbacks = [m for m in local_chain if m != current_model and m not in self._dead_models][:2]
                     if server_fallbacks:
                         kwargs["extra_body"] = {"models": server_fallbacks}
 
                 response = self.client.chat.completions.create(**kwargs)
-
                 raw_content = response.choices[0].message.content or ""
 
-                preview = raw_content[:200].replace("\n", " ")
+                preview = raw_content[:180].replace("\n", " ")
                 safe_log(f"    [RAW] Model reply preview: {preview}")
 
                 results = self._extract_results(raw_content)
@@ -257,7 +254,7 @@ class AiEvaluator:
                 if len(results) == 0:
                     raise ValueError("ParseError: Model returned 0 valid JSON items")
 
-                # Persist whichever model succeeded
+                # Persist succeeding model
                 self.model = current_model
                 return results
 
@@ -269,30 +266,30 @@ class AiEvaluator:
                 is_rate_limit = (
                     "429" in err_str
                     or "rate_limit" in err_str
-                    or "quota" in err_str.lower()
+                    or "quota" in err_str
                     or "temporarily rate-limited" in err_str
                 )
-                is_parse_error = "parseerror" in err_str.lower()
+                is_parse_error = "parseerror" in err_str
 
-                # On fatal error or rate limit, switch model IMMEDIATELY (no sleep on dead model)
+                # Fail-fast to next fallback model
                 if (is_fatal or is_rate_limit or is_parse_error) and local_chain:
+                    self._dead_models.add(current_model)
                     if current_model in local_chain:
                         local_chain.remove(current_model)
 
                     if local_chain:
                         old_model = current_model
                         current_model = local_chain[0]
+                        self.model = current_model
                         reason = "Rate limited (429)" if is_rate_limit else "Fatal error" if is_fatal else "Parse error"
                         safe_log(f"    [FAIL-FAST] {reason} on {old_model} → switching to {current_model}")
-                        self.model = current_model
                         if self.on_model_switch:
                             self.on_model_switch(old_model, current_model)
                         continue
                     else:
                         safe_log("    [ERROR] Все резервные модели исчерпаны.")
 
-                # If no fallback chain available, wait briefly
-                wait = min(attempt * 2.0, 8.0)
+                wait = min(attempt * 2.0, 6.0)
                 safe_log(f"    [WARN] Попытка {attempt}/{max_retries}: ожидание {wait:.1f}с... ({exc})")
                 time.sleep(wait)
 
@@ -310,13 +307,13 @@ class AiEvaluator:
 
         clean_text = text.strip()
 
-        # ── Step 0: Strip reasoning/thinking tags ──
+        # Step 0: Strip reasoning/thinking tags
         clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r"<thinking>.*?</thinking>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r"<reasoning>.*?</reasoning>", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = clean_text.strip()
 
-        # ── Step 1: Strip markdown code fences ──
+        # Step 1: Strip markdown code fences
         if "```json" in clean_text:
             clean_text = clean_text.split("```json", 1)[1]
             if "```" in clean_text:
@@ -326,7 +323,7 @@ class AiEvaluator:
             clean_text = parts[1] if len(parts) >= 3 else clean_text.replace("```", "")
         clean_text = clean_text.strip()
 
-        # ── Step 2: Direct JSON parse ──
+        # Step 2: Direct JSON parse
         try:
             parsed = json.loads(clean_text, strict=False)
             if isinstance(parsed, list):
@@ -343,7 +340,7 @@ class AiEvaluator:
         except Exception:
             pass
 
-        # ── Step 3: Find outermost JSON array or object ──
+        # Step 3: Find outermost JSON array or object
         bracket_match = re.search(r"\[[\s\S]*\]", clean_text)
         if bracket_match:
             try:
@@ -353,74 +350,67 @@ class AiEvaluator:
             except Exception:
                 pass
 
-        brace_match = re.search(r"\{[\s\S]*\}", clean_text)
-        if brace_match:
+        obj_matches = re.findall(r"\{[^{}]*\}", clean_text)
+        extracted = []
+        for obj_str in obj_matches:
             try:
-                parsed = json.loads(brace_match.group(0), strict=False)
-                if isinstance(parsed, dict):
-                    for key in ("results", "data", "vacancies", "items"):
-                        if isinstance(parsed.get(key), list):
-                            return [p for p in parsed[key] if isinstance(p, dict)]
-            except Exception:
-                pass
-
-        # ── Step 4: Extract item by item with regex ──
-        items: list[dict] = []
-        pattern = re.compile(r'\{\s*"temp_id"\s*:\s*(\d+).*?\}', re.DOTALL)
-        for match in pattern.finditer(clean_text):
-            chunk = match.group(0)
-            try:
-                item = json.loads(chunk, strict=False)
-                if isinstance(item, dict):
-                    items.append(item)
-                    continue
-            except Exception:
-                pass
-
-            try:
-                tid = int(match.group(1))
-                item_dict: dict = {"temp_id": tid}
-
-                for field in ["role_match", "level_match", "tech_match", "experience_match"]:
-                    m = re.search(rf'"{field}"\s*:\s*(\d+)', chunk)
-                    if m:
-                        item_dict[field] = int(m.group(1))
-
-                for field in ["TechStack", "AiSummary", "ExtractedExperience",
-                               "detected_role", "detected_level", "critical_reason"]:
-                    m = re.search(rf'"{field}"\s*:\s*"(.*?)"(?:\s*,\s*"|\s*}})', chunk, re.DOTALL)
-                    if m:
-                        item_dict[field] = m.group(1)
-
-                m_crit = re.search(r'"critical_mismatch"\s*:\s*(true|false)', chunk, re.IGNORECASE)
-                if m_crit:
-                    item_dict["critical_mismatch"] = (m_crit.group(1).lower() == "true")
-
-                items.append(item_dict)
+                obj = json.loads(obj_str, strict=False)
+                if isinstance(obj, dict) and "temp_id" in obj:
+                    extracted.append(obj)
             except Exception:
                 continue
 
-        return items
+        return extracted
+
+    @staticmethod
+    def _extract_fallback_tech(title: str, desc: str | None) -> str:
+        text = f"{title} {desc or ''}".lower()
+        known = [
+            "c#", ".net", "asp.net", "wpf", "wcf", "sql", "python", "django", "fastapi",
+            "flask", "javascript", "typescript", "react", "vue", "angular", "node.js",
+            "java", "spring", "go", "golang", "rust", "c++", "cpp", "docker",
+            "kubernetes", "aws", "azure", "gcp", "flutter", "ios", "swift",
+            "android", "kotlin", "qa", "qa automation", "cypress", "selenium", "creatio",
+            "umbraco", "html", "css", "tailwind", "next.js", "graphql", "redis", "postgresql",
+        ]
+        found = []
+        for k in known:
+            pattern = rf"(?:^|[\s,.\-—/(){{}}[\]]){re.escape(k)}(?:$|[\s,.\-—/(){{}}[\]])"
+            if re.search(pattern, text):
+                clean_k = k.upper() if k in ("sql", "aws", "gcp", "qa", "css", "html", "ios", "wpf", "wcf") else k.title()
+                if clean_k not in found:
+                    found.append(clean_k)
+
+        return ", ".join(found[:6]) if found else "Не указано"
+
+    @classmethod
+    def _fallback_vacancy(cls, vac: Vacancy) -> Vacancy:
+        score = 65
+        title = vac.get("Title", "")
+        desc = vac.get("DescriptionSnippet", "")
+        orig_stack = vac.get("TechStack", "").strip()
+        stack = orig_stack if orig_stack else cls._extract_fallback_tech(title, desc)
+        orig_exp = vac.get("RequiredExperience", "").strip()
+        exp = normalize_experience_text(orig_exp or desc)
+
+        result: Vacancy = {
+            "Title": title,
+            "Company": vac.get("Company", "Неизвестно"),
+            "Url": vac.get("Url", ""),
+            "SalaryString": vac.get("SalaryString", ""),
+            "RequiredExperience": exp,
+            "TechStack": stack,
+            "AiSummary": "Автоматическая оценка (базовый анализ требований).",
+            "AiMatchScore": score,
+        }
+        if "Source" in vac:
+            result["Source"] = vac["Source"]
+        return result
 
     @staticmethod
     def _sanitize_text(text: str) -> str:
-        """Strip HTML tags and problematic characters."""
         if not text:
             return ""
-
-        from html.parser import HTMLParser
-
-        class _Stripper(HTMLParser):
-            def __init__(self) -> None:
-                super().__init__()
-                self._parts: list[str] = []
-
-            def handle_data(self, data: str) -> None:
-                self._parts.append(data)
-
-            def get_text(self) -> str:
-                return " ".join(self._parts)
-
         stripper = _Stripper()
         stripper.feed(text)
         clean = stripper.get_text()
@@ -493,7 +483,6 @@ class AiEvaluator:
                 ai_tech = ", ".join(str(t) for t in ai_tech)
             ai_tech_str = str(ai_tech).strip()
 
-            # Preserve scraper tags if AI returned empty / generic
             orig_stack = updated.get("TechStack", "").strip()
             if ai_tech_str and ai_tech_str not in ("Не указано", "не указано", "-"):
                 updated["TechStack"] = ai_tech_str
@@ -507,46 +496,15 @@ class AiEvaluator:
 
             extracted_exp = str(res.get("ExtractedExperience", "")).strip()
             current_exp = updated.get("RequiredExperience", "").strip()
-            if (not current_exp or current_exp in ("Смотреть в описании", "Не указано", "не указан")) and extracted_exp and extracted_exp not in ("Не указано", "-"):
-                updated["RequiredExperience"] = extracted_exp
+            if extracted_exp and extracted_exp not in ("Не указано", "-"):
+                updated["RequiredExperience"] = normalize_experience_text(extracted_exp)
+            elif current_exp:
+                updated["RequiredExperience"] = normalize_experience_text(current_exp)
+            else:
+                updated["RequiredExperience"] = "в описании"
 
             updated.pop("_temp_id", None)
             updated.pop("DescriptionSnippet", None)
             merged.append(updated)
 
         return merged
-
-    @classmethod
-    def _extract_fallback_tech(cls, title: str, desc: str) -> str:
-        known_techs = [
-            "C#", ".NET", ".NET Core", "ASP.NET", "Entity Framework", "SQL", "PostgreSQL",
-            "MySQL", "Python", "Django", "FastAPI", "Flask", "JavaScript", "TypeScript",
-            "React", "Vue", "Angular", "Node.js", "Java", "Spring", "Kotlin", "Go",
-            "Golang", "Rust", "C++", "Docker", "Kubernetes", "AWS", "Azure", "GCP",
-            "Git", "REST API", "GraphQL", "Redis", "MongoDB", "RabbitMQ", "Kafka",
-            "HTML", "CSS", "Tailwind", "Bootstrap", "Linux", "CI/CD", "Creatio", "Umbraco", "QA"
-        ]
-        combined = f"{title} {desc}".lower()
-        found = []
-        for tech in known_techs:
-            t_low = tech.lower()
-            if t_low in combined:
-                found.append(tech)
-        if found:
-            return ", ".join(found[:5])
-        return "C#, .NET" if ("c#" in title.lower() or ".net" in title.lower()) else "IT Стек"
-
-    @classmethod
-    def _fallback_vacancy(cls, vacancy: Vacancy) -> Vacancy:
-        fallback = dict(vacancy)
-        title = fallback.get("Title", "")
-        desc = fallback.get("DescriptionSnippet", "")
-        tech = cls._extract_fallback_tech(title, desc)
-        fallback.update({
-            "TechStack": tech,
-            "AiSummary": f"Позиція «{title}». Основний стек: {tech}.",
-            "AiMatchScore": 55,
-        })
-        fallback.pop("_temp_id", None)
-        fallback.pop("DescriptionSnippet", None)
-        return fallback

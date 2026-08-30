@@ -1,62 +1,18 @@
 from concurrent.futures import ThreadPoolExecutor
-import re
 from bs4 import BeautifulSoup
 import cloudscraper
 
-from App.config import DEFAULT_PAGE_TIMEOUT, SCRAPER_USER_AGENT
+from App.config import DEFAULT_PAGE_TIMEOUT
 from App.models import Vacancy, JobCriteria
 from App.Scrapers.base import BaseScraper
+from App.utils import safe_log, clean_tech_token, normalize_experience_text
 
 
-def extract_exp_from_text(text: str) -> str:
-    """Extract experience requirement from text in UA/RU/EN and normalize to clean Russian format."""
-    if not text:
-        return "в описании"
-    t = text.strip().lower()
-
-    if "без" in t or "no experience" in t or "trainee" in t or "студент" in t:
-        return "без опыта"
-    if "в описі" in t or "в описании" in t or t == "не указано":
-        return "в описании"
-
-    # Match 0.5 year / 6 months / 0.5 року
-    if re.search(r'(0[.,]5|пів|пол|6\s*міс|6\s*мес)', t):
-        return "до 1 года"
-
-    # Match range e.g. '1-3 года', '1-3 роки', '2-5 years', '1–3y'
-    range_match = re.search(r'(\d+)\s*[-–]\s*(\d+)\s*(?:years?|yrs?|yr|років|роки|року|лет|года|год|y)?', t)
-    if range_match:
-        n1, n2 = range_match.group(1), range_match.group(2)
-        return f"{n1}-{n2} года"
-
-    # Match '5+ years', '5+ лет', '3+ роки'
-    plus_match = re.search(r'(\d+)\s*\+\s*(?:years?|yrs?|yr|років|роки|року|лет|года|год|y)?', t)
-    if plus_match:
-        n = int(plus_match.group(1))
-        unit = "год" if n == 1 else "года" if 2 <= n <= 4 else "лет"
-        return f"{n}+ {unit}"
-
-    # Match 'от X лет', 'від X років', 'from X years'
-    from_match = re.search(r'(?:від|от|from|більше|более)\s*(\d+)\s*(?:years?|yrs?|yr|років|роки|року|лет|года|год|y)?', t)
-    if from_match:
-        n = int(from_match.group(1))
-        unit = "года" if n == 1 else "лет"
-        return f"от {n} {unit}"
-
-    # Match single number e.g. '1 year', '2 роки', '5 years', '5 лет'
-    num_match = re.search(r'(?:досвід|опыт|experience|вимоги)?\D*(\d+)\s*(?:years?|yrs?|yr|років|роки|року|лет|года|год|y)', t)
-    if num_match:
-        n = int(num_match.group(1))
-        unit = "год" if (n % 10 == 1 and n % 100 != 11) else "года" if (2 <= n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20)) else "лет"
-        return f"{n} {unit}"
-
-    return "в описании"
-
-
-def _fetch_single_workua_details(url: str) -> tuple[list[str], str, str]:
+def _fetch_single_workua_details(scraper: cloudscraper.CloudScraper, url: str) -> tuple[list[str], str, str]:
     """Fetch skills, full description and conditions from individual Work.ua page."""
+    if not url:
+        return [], "", ""
     try:
-        scraper = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "windows", "desktop": True})
         r = scraper.get(url, timeout=7)
         if r.status_code != 200:
             return [], "", ""
@@ -73,12 +29,6 @@ def _fetch_single_workua_details(url: str) -> tuple[list[str], str, str]:
 
 class WorkUaScraper(BaseScraper):
     """Scraper for Work.ua with multi-filter, rich details enrichment, and fallback support."""
-
-    @staticmethod
-    def _clean_token(token: str) -> str:
-        t = token.strip()
-        t = re.sub(r'[сС](?=[#\+])', 'C', t)
-        return t
 
     def _map_experience(self, exp_str: str) -> str | None:
         low = exp_str.lower()
@@ -97,7 +47,7 @@ class WorkUaScraper(BaseScraper):
         if not raw_stacks and keyword:
             raw_stacks = [keyword.strip()]
 
-        cleaned_tokens = [self._clean_token(s) for s in raw_stacks if s]
+        cleaned_tokens = [clean_tech_token(s) for s in raw_stacks if s]
         search_query = " ".join(cleaned_tokens[:2]) if len(cleaned_tokens) > 1 else (cleaned_tokens[0] if cleaned_tokens else keyword.strip())
 
         params: dict = {"search": search_query}
@@ -142,18 +92,25 @@ class WorkUaScraper(BaseScraper):
         if not any(urls):
             return
 
+        scraper = cloudscraper.create_scraper(
+            browser={
+                "browser": "chrome",
+                "platform": "windows",
+                "desktop": True,
+            }
+        )
+
         with ThreadPoolExecutor(max_workers=min(6, len(jobs))) as executor:
-            details_list = list(executor.map(_fetch_single_workua_details, urls))
+            details_list = list(executor.map(lambda u: _fetch_single_workua_details(scraper, u), urls))
 
         for vac, (skills, full_desc, cond_text) in zip(jobs, details_list):
             if skills:
                 vac["TechStack"] = ", ".join(skills)
             if full_desc:
                 vac["DescriptionSnippet"] = full_desc[:1500]
-            
-            # Extract experience from conditions or description if not set
-            exp = extract_exp_from_text(cond_text) or extract_exp_from_text(full_desc) or vac.get("RequiredExperience", "")
-            if exp:
+
+            exp = normalize_experience_text(cond_text or full_desc or vac.get("RequiredExperience", ""))
+            if exp and exp != "в описании":
                 vac["RequiredExperience"] = exp
 
     def _execute_query(self, params: dict) -> list[Vacancy]:
@@ -171,11 +128,11 @@ class WorkUaScraper(BaseScraper):
                 params=params,
                 timeout=DEFAULT_PAGE_TIMEOUT,
             )
-            print(f"[Work.ua] URL: {response.url}")
+            safe_log(f"[Work.ua] URL: {response.url}")
             if response.status_code != 200:
                 return []
         except Exception as e:
-            print(f"[Work.ua] Ошибка сбора: {e}")
+            safe_log(f"[Work.ua] Ошибка сбора: {e}")
             return []
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -200,20 +157,17 @@ class WorkUaScraper(BaseScraper):
                 if url and not url.startswith("http"):
                     url = "https://www.work.ua" + url
 
-                # Company name
                 company = "Неизвестно"
                 company_div = card.find("div", class_=lambda c: c and ("company" in c or "strong-600" in c))
                 if company_div:
                     company = company_div.get_text(strip=True)
 
-                # Card description snippet & experience
                 card_text = card.get_text(" ", strip=True)
-                card_exp = extract_exp_from_text(card_text)
+                card_exp = normalize_experience_text(card_text)
 
                 desc_p = card.find("p", class_=lambda c: c and ("ellipsis" in c or "text-default" in c or "overflow" in c or "text-muted" in c))
                 desc = desc_p.get_text(" ", strip=True) if desc_p else ""
 
-                # Salary
                 salary = ""
                 salary_tag = card.find("b", class_=lambda c: c and "strong-600" in c) or card.find("span", class_="strong-600")
                 if salary_tag and any(char.isdigit() for char in salary_tag.text):
@@ -232,7 +186,7 @@ class WorkUaScraper(BaseScraper):
                     "RequiredExperience": card_exp,
                 })
             except Exception as exc:
-                print(f"[Work.ua] Ошибка парсинга карточки #{idx}: {exc}")
+                safe_log(f"[Work.ua] Ошибка парсинга карточки #{idx}: {exc}")
                 continue
 
         return jobs

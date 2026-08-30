@@ -1,11 +1,11 @@
 import json
-import re
 import requests
 from bs4 import BeautifulSoup
 
 from App.config import DEFAULT_PAGE_TIMEOUT, SCRAPER_USER_AGENT
 from App.models import Vacancy, JobCriteria
 from App.Scrapers.base import BaseScraper
+from App.utils import safe_log, clean_tech_token, normalize_experience_text
 
 
 class DjinniScraper(BaseScraper):
@@ -35,7 +35,7 @@ class DjinniScraper(BaseScraper):
         "js": "javascript",
         "typescript": "javascript",
         "ts": "javascript",
-        "react": "react_native",  # Djinni has javascript/frontend/react
+        "react": "react_native",
         "vue": "javascript",
         "angular": "javascript",
         "frontend": "javascript",
@@ -75,12 +75,6 @@ class DjinniScraper(BaseScraper):
         "aws": "devops",
     }
 
-    @staticmethod
-    def _normalize_token(text: str) -> str:
-        t = text.strip().lower()
-        t = re.sub(r'[сС](?=[#\+])', 'c', t)
-        return " ".join(t.split())
-
     def _map_experience(self, exp_str: str) -> str | None:
         low = exp_str.lower()
         if "без" in low or "студент" in low or "trainee" in low:
@@ -101,7 +95,7 @@ class DjinniScraper(BaseScraper):
         # Determine Djinni primary_keywords
         matched_categories: list[str] = []
         for stack_item in raw_stacks:
-            clean = self._normalize_token(stack_item)
+            clean = clean_tech_token(stack_item).lower()
             if clean in self.CATEGORY_MAP:
                 cat = self.CATEGORY_MAP[clean]
                 if cat not in matched_categories:
@@ -149,11 +143,11 @@ class DjinniScraper(BaseScraper):
                 params=params,
                 timeout=DEFAULT_PAGE_TIMEOUT,
             )
-            print(f"[Djinni] URL: {response.url}")
+            safe_log(f"[Djinni] URL: {response.url}")
             if response.status_code != 200:
                 return []
         except Exception as e:
-            print(f"[Djinni] Ошибка запроса: {e}")
+            safe_log(f"[Djinni] Ошибка запроса: {e}")
             return []
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -231,7 +225,7 @@ class DjinniScraper(BaseScraper):
                 "Title": title,
                 "Company": company,
                 "Url": url,
-                "RequiredExperience": "",
+                "RequiredExperience": normalize_experience_text(desc),
                 "DescriptionSnippet": desc[:1200],
             })
         return normalized

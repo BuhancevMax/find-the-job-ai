@@ -3,21 +3,34 @@ bin/
 obj/
 .vs/
 .idea/
+.vscode/
 *.user
+*.sln.DotSettings.user
 
-# База данных SQLite (не заливаем кэш в интернет!)
+# Database (SQLite)
 *.db
 *.db-shm
 *.db-wal
+vacancies.db
 
 # Python
+.venv/
+*/.venv/
 PythonScripts/.venv/
+__pycache__/
+*/__pycache__/
 PythonScripts/__pycache__/
 *.pyc
+*.pyo
 
-# Системные файлы
+# Environment Variables & Secrets
+.env
+*.env
+PythonScripts/.env
+PythonScripts/*.env
+!.env.example
+!PythonScripts/.env.example
+
+# OS & System
 .DS_Store
 Thumbs.db
-
-# Python кэш (глобально)
-__pycache__/

@@ -12,29 +12,32 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddHttpClient("", client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(10);
-});
+
 builder.Services.AddDbContext<AppDbContext>();
-builder.Services.AddHttpClient<IParsingBackendClient, ParsingBackendClient>();
+
+// Register typed ParsingBackendClient with 5-minute timeout for multi-platform streaming
+builder.Services.AddHttpClient<IParsingBackendClient, ParsingBackendClient>(client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
+
 builder.Services.AddScoped<IVacancyService, VacancyService>();
+
 var app = builder.Build();
 
-// Auto-migration for SQLite without EF Tools
+// Auto-migration for SQLite on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
-    
+
     try
     {
-        // Check if Source column exists, if not, add it
         db.Database.ExecuteSqlRaw("ALTER TABLE Vacancies ADD COLUMN Source TEXT DEFAULT ''");
     }
     catch
     {
-        // Column likely already exists, ignore
+        // Column already exists
     }
 }
 
@@ -42,15 +45,11 @@ using (var scope = app.Services.CreateScope())
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
-
-
 app.UseAntiforgery();
-
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

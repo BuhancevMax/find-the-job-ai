@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import time
 import urllib.request
 
@@ -8,19 +8,16 @@ import urllib.request
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OpenRouter fallback chain — verified active free models (fastest/most reliable first)
-# Sourced from live OpenRouter API
+# OpenRouter fallback chain — verified active free models (fastest & most reliable first)
 # ─────────────────────────────────────────────────────────────────────────────
 OPENROUTER_MODEL_FALLBACK_CHAIN = [
     "minimax/minimax-m3:free",                                # 2-6s (Fastest & Accurate JSON)
     "dots-studio/dots-3-note-preview:free",                   # ~8s
     "inclusionai/ling-3.0-flash-fin:free",                    # ~8.9s
-    "poolside/laguna-s-2.1:free",                             # ~9.7s
     "cohere/north-mini-code:free",                            # ~10.6s
     "minimax/minimax-m2.7:free",                              # ~11.5s
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",     # ~12.7s
-    "poolside/laguna-xs-2.1:free",                            # ~13.5s
-    "nvidia/nemotron-3-super-120b-a12b:free",                 # ~15.4s
+    "poolside/laguna-s-2.1:free",                             # ~9.7s
     "openrouter/free",                                        # Native OpenRouter Free Router
 ]
 DEFAULT_OPENROUTER_MODEL = OPENROUTER_MODEL_FALLBACK_CHAIN[0]
@@ -32,7 +29,7 @@ _last_fetch: float = 0.0
 def get_live_openrouter_free_models() -> list[str]:
     """
     Dynamically discover currently active ':free' models from OpenRouter API.
-    Caches for 30 minutes, falls back to OPENROUTER_MODEL_FALLBACK_CHAIN on network errors.
+    Caches for 30 minutes, falls back to OPENROUTER_MODEL_FALLBACK_CHAIN on network errors/timeouts.
     """
     global _cached_free_models, _last_fetch
     now = time.time()
@@ -44,7 +41,7 @@ def get_live_openrouter_free_models() -> list[str]:
             "https://openrouter.ai/api/v1/models",
             headers={"User-Agent": "FindTheJobAI/1.0"}
         )
-        with urllib.request.urlopen(req, timeout=4) as resp:
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
             data = json.loads(resp.read().decode())
             models = data.get("data", [])
             live_free = [m["id"] for m in models if ":free" in m.get("id", "")]
@@ -61,7 +58,7 @@ def get_live_openrouter_free_models() -> list[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Weights for the final deterministic score
+# Weights for the deterministic evaluation score
 # ─────────────────────────────────────────────────────────────────────────────
 ROLE_WEIGHT = 0.25
 LEVEL_WEIGHT = 0.25
@@ -84,8 +81,7 @@ SCRAPER_USER_AGENT = (
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Errors that indicate the model/key is fundamentally broken — skip immediately
-# without waiting for retries on the SAME model.
+# Fatal errors indicating the model/key is broken — fail fast to next fallback model
 # ─────────────────────────────────────────────────────────────────────────────
 FATAL_ERROR_SIGNALS = [
     "invalid_api_key",

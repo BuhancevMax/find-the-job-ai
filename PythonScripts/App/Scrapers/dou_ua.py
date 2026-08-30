@@ -1,5 +1,4 @@
 from concurrent.futures import ThreadPoolExecutor
-import re
 import urllib.parse
 from bs4 import BeautifulSoup
 import cloudscraper
@@ -7,22 +6,21 @@ import cloudscraper
 from App.config import DEFAULT_PAGE_TIMEOUT
 from App.models import Vacancy, JobCriteria
 from App.Scrapers.base import BaseScraper
-from App.Scrapers.workua import extract_exp_from_text
+from App.utils import safe_log, clean_tech_token, normalize_experience_text
 
 
-def _fetch_single_dou_details(url: str) -> tuple[str, str]:
+def _fetch_single_dou_details(scraper: cloudscraper.CloudScraper, url: str) -> tuple[str, str]:
     """Fetch full description and experience from individual DOU vacancy page."""
     if not url:
         return "", ""
     try:
-        scraper = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "windows", "desktop": True})
         r = scraper.get(url, timeout=7)
         if r.status_code != 200:
             return "", ""
         soup = BeautifulSoup(r.text, "html.parser")
         desc_elem = soup.find("div", class_=lambda c: c and "b-typo" in c) or soup.find("div", class_=lambda c: c and "vacancy-section" in c)
         desc = desc_elem.get_text(" ", strip=True) if desc_elem else ""
-        exp = extract_exp_from_text(desc)
+        exp = normalize_experience_text(desc)
         return desc, exp
     except Exception:
         return "", ""
@@ -60,18 +58,12 @@ class DouUaScraper(BaseScraper):
         "sql": "DBA",
     }
 
-    @staticmethod
-    def _clean_token(token: str) -> str:
-        t = token.strip()
-        t = re.sub(r'[сС](?=[#\+])', 'C', t)
-        return t
-
     def fetch_jobs(self, keyword: str, criteria: JobCriteria | None = None) -> list[Vacancy]:
         raw_stacks = criteria.get_stack_list() if criteria else [s.strip() for s in keyword.split(",") if s.strip()]
         if not raw_stacks and keyword:
             raw_stacks = [keyword.strip()]
 
-        cleaned_tokens = [self._clean_token(s) for s in raw_stacks if s]
+        cleaned_tokens = [clean_tech_token(s) for s in raw_stacks if s]
         search_query = " ".join(cleaned_tokens[:2]) if cleaned_tokens else keyword.strip()
 
         matched_category = None
@@ -81,7 +73,7 @@ class DouUaScraper(BaseScraper):
                 matched_category = self.CATEGORY_MAP[low]
                 break
 
-        # Primary query: search with descr=1 (search in vacancy descriptions)
+        # Primary query: search with descr=1 (search inside vacancy descriptions)
         params: dict = {"descr": "1"}
         if search_query:
             params["search"] = search_query
@@ -127,13 +119,21 @@ class DouUaScraper(BaseScraper):
         if not any(urls):
             return
 
+        scraper = cloudscraper.create_scraper(
+            browser={
+                "browser": "chrome",
+                "platform": "windows",
+                "desktop": True,
+            }
+        )
+
         with ThreadPoolExecutor(max_workers=min(6, len(jobs))) as executor:
-            details_list = list(executor.map(_fetch_single_dou_details, urls))
+            details_list = list(executor.map(lambda u: _fetch_single_dou_details(scraper, u), urls))
 
         for vac, (full_desc, exp) in zip(jobs, details_list):
             if full_desc:
                 vac["DescriptionSnippet"] = full_desc[:1500]
-            if exp:
+            if exp and exp != "в описании":
                 vac["RequiredExperience"] = exp
 
     def _execute_query(self, params: dict) -> list[Vacancy]:
@@ -150,7 +150,7 @@ class DouUaScraper(BaseScraper):
 
         try:
             r = scraper.get(base_url, timeout=DEFAULT_PAGE_TIMEOUT)
-            print(f"[DOU] URL: {r.url}")
+            safe_log(f"[DOU] URL: {r.url}")
             if r.status_code != 200:
                 return []
 
@@ -169,7 +169,7 @@ class DouUaScraper(BaseScraper):
             html = resp.json().get("html", "")
             soup = BeautifulSoup(html, "html.parser")
         except Exception as e:
-            print(f"[DOU] Ошибка сбора: {e}")
+            safe_log(f"[DOU] Ошибка сбора: {e}")
             return []
 
         jobs: list[Vacancy] = []
@@ -195,7 +195,7 @@ class DouUaScraper(BaseScraper):
                 salary_elem = card.find("span", class_="salary")
                 salary = salary_elem.get_text(strip=True) if salary_elem else ""
 
-                card_exp = extract_exp_from_text(desc)
+                card_exp = normalize_experience_text(desc)
 
                 jobs.append({
                     "_temp_id": idx,
@@ -210,7 +210,7 @@ class DouUaScraper(BaseScraper):
                     "RequiredExperience": card_exp,
                 })
             except Exception as e:
-                print(f"[DOU] Ошибка парсинга карточки #{idx}: {e}")
+                safe_log(f"[DOU] Ошибка парсинга карточки #{idx}: {e}")
                 continue
 
         return jobs

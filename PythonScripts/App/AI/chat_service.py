@@ -25,7 +25,7 @@ from App.config import (
     FATAL_ERROR_SIGNALS,
     get_live_openrouter_free_models,
 )
-from App.AI.evaluator import safe_log
+from App.utils import safe_log
 
 
 # ─────────────────────────────────────────────────────────────────────────────
