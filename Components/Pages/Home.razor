@@ -841,6 +841,32 @@
     // ============================================================
     // Lifecycle & Settings
     // ============================================================
+    private async Task<string?> SafeGetStorageAsync(string key)
+    {
+        try
+        {
+            var res = await BrowserStorage.GetAsync<string>(key);
+            return res.Success ? res.Value : null;
+        }
+        catch
+        {
+            try { await BrowserStorage.DeleteAsync(key); } catch { }
+            return null;
+        }
+    }
+
+    private async Task SafeSetStorageAsync(string key, string value)
+    {
+        try
+        {
+            await BrowserStorage.SetAsync(key, value);
+        }
+        catch
+        {
+            // Silently ignore if browser denies local storage
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         Loc.OnLanguageChanged += async () => await InvokeAsync(StateHasChanged);
@@ -851,30 +877,30 @@
     {
         if (!firstRender) return;
 
-        var uiLangResult = await BrowserStorage.GetAsync<string>("savedUiLanguage");
-        if (uiLangResult.Success && !string.IsNullOrEmpty(uiLangResult.Value))
+        var uiLang = await SafeGetStorageAsync("savedUiLanguage");
+        if (!string.IsNullOrEmpty(uiLang))
         {
-            Loc.CurrentLanguage = uiLangResult.Value;
+            Loc.CurrentLanguage = uiLang;
             targetLanguage = Loc.CurrentLanguage == "en" ? "English" : "Українська";
         }
 
-        var keyResult = await BrowserStorage.GetAsync<string>("savedApiKey");
-        if (keyResult.Success && !string.IsNullOrEmpty(keyResult.Value)) apiKey = keyResult.Value;
+        var keyVal = await SafeGetStorageAsync("savedApiKey");
+        if (!string.IsNullOrEmpty(keyVal)) apiKey = keyVal;
 
-        var roleResult = await BrowserStorage.GetAsync<string>("savedRole");
-        if (roleResult.Success && !string.IsNullOrEmpty(roleResult.Value)) targetRole = roleResult.Value;
+        var roleVal = await SafeGetStorageAsync("savedRole");
+        if (!string.IsNullOrEmpty(roleVal)) targetRole = roleVal;
 
-        var expResult = await BrowserStorage.GetAsync<string>("savedExp");
-        if (expResult.Success && !string.IsNullOrEmpty(expResult.Value)) targetExp = expResult.Value;
+        var expVal = await SafeGetStorageAsync("savedExp");
+        if (!string.IsNullOrEmpty(expVal)) targetExp = expVal;
 
-        var langResult = await BrowserStorage.GetAsync<string>("savedLanguage");
-        if (langResult.Success && !string.IsNullOrEmpty(langResult.Value)) targetLanguage = langResult.Value;
+        var langVal = await SafeGetStorageAsync("savedLanguage");
+        if (!string.IsNullOrEmpty(langVal)) targetLanguage = langVal;
 
-        var stacksResult = await BrowserStorage.GetAsync<string>("savedStacks");
-        if (stacksResult.Success && !string.IsNullOrEmpty(stacksResult.Value))
+        var stacksVal = await SafeGetStorageAsync("savedStacks");
+        if (!string.IsNullOrEmpty(stacksVal))
         {
             selectedStacks = new HashSet<string>(
-                stacksResult.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                stacksVal.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         }
 
         StateHasChanged();
@@ -884,8 +910,8 @@
     {
         Loc.CurrentLanguage = lang;
         targetLanguage = lang == "en" ? "English" : "Українська";
-        await BrowserStorage.SetAsync("savedUiLanguage", lang);
-        await BrowserStorage.SetAsync("savedLanguage", targetLanguage);
+        await SafeSetStorageAsync("savedUiLanguage", lang);
+        await SafeSetStorageAsync("savedLanguage", targetLanguage);
         StateHasChanged();
     }
 
@@ -902,13 +928,13 @@
     {
         if (isChecked) selectedStacks.Add(tech);
         else selectedStacks.Remove(tech);
-        await BrowserStorage.SetAsync("savedStacks", string.Join(",", selectedStacks));
+        await SafeSetStorageAsync("savedStacks", string.Join(",", selectedStacks));
     }
 
     private async Task ClearStack()
     {
         selectedStacks.Clear();
-        await BrowserStorage.SetAsync("savedStacks", "");
+        await SafeSetStorageAsync("savedStacks", "");
     }
 
     // ============================================================
@@ -1325,10 +1351,10 @@
 
         try
         {
-            await BrowserStorage.SetAsync("savedLanguage", targetLanguage);
-            await BrowserStorage.SetAsync("savedApiKey", apiKey);
-            await BrowserStorage.SetAsync("savedRole", targetRole);
-            await BrowserStorage.SetAsync("savedExp", targetExp);
+            await SafeSetStorageAsync("savedLanguage", targetLanguage);
+            await SafeSetStorageAsync("savedApiKey", apiKey);
+            await SafeSetStorageAsync("savedRole", targetRole);
+            await SafeSetStorageAsync("savedExp", targetExp);
 
             await foreach (var ev in ParsingBackendClient.ParseVacanciesStreamAsync(
                 selectedPlatforms, apiKey, SearchKeyword, targetRole, targetExp, targetLanguage,

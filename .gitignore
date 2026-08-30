@@ -34,3 +34,12 @@ PythonScripts/*.env
 # OS & System
 .DS_Store
 Thumbs.db
+
+# Build & Publish Artifacts
+publish/
+*/publish/
+dist/
+*/dist/
+build/
+*/build/
+*.spec

@@ -1,10 +1,13 @@
+import sys
 from pathlib import Path
 from string import Template
 
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    PROMPT_DIR = Path(sys._MEIPASS) / "Prompts"
+else:
+    PROMPT_DIR = Path(__file__).resolve().parents[2] / "Prompts"
 
-PROMPT_PATH = (
-    Path(__file__).resolve().parents[2] / "Prompts" / "job_evaluator.txt"
-)
+PROMPT_PATH = PROMPT_DIR / "job_evaluator.txt"
 
 
 from App.models import JobCriteria
