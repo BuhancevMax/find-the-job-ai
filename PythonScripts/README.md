@@ -1,36 +1,34 @@
 # AI Job Parser Backend (FastAPI)
 
-Это микросервис на базе FastAPI, который выполняет парсинг вакансий с популярных площадок (Djinni, Work.ua, Robota.ua, DOU) и оценивает их через AI (OpenRouter, Groq, DeepSeek).
+Це бекенд-мікросервіс на базі **FastAPI**, що виконує паралельний збір вакансій з провідних майданчиків (**Djinni**, **Work.ua**, **Robota.ua**, **DOU.ua**) та проводить глибокий аналіз вимог за допомогою безкоштовних LLM моделей (**OpenRouter Free Tier**).
 
-## Зависимости и Установка
+## Залежності та Встановлення
 
-Все необходимые библиотеки перечислены в `requirements.txt`.
-Проект использует:
-- `fastapi` & `uvicorn` — для веб-сервера.
-- `beautifulsoup4` & `requests` — для базового парсинга и взаимодействия с API.
-- `cloudscraper` — для обхода защиты Cloudflare (например, на Work.ua).
-- `openai` — для работы с LLM провайдерами через OpenAI-совместимое API.
+Усі необхідні бібліотеки зазначені у `requirements.txt`:
+- `fastapi` & `uvicorn` — асинхронний веб-сервер та SSE стрімінг (NDJSON).
+- `beautifulsoup4` & `requests` — збір та парсинг HTML/API.
+- `cloudscraper` — обхід захисту Cloudflare на платформах пошуку роботи.
+- `openai` — взаємодія з каталогом моделей OpenRouter.
+- `pydantic` — сувора типізація та валідація даних.
 
-### Как запустить локально
+### Як запустити локально
 
-1. Создайте и активируйте виртуальное окружение:
+1. Створіть та активуйте віртуальне оточення:
 ```bash
 python -m venv .venv
-# На Windows:
-.venv\Scripts\activate
-# На Mac/Linux:
-source .venv/bin/activate
+
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Linux / macOS:
+# source .venv/bin/activate
 ```
 
-2. Установите зависимости:
+2. Встановіть залежності:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. (Опционально) Настройте переменные окружения:
-Скопируйте `.env.example` в `.env` и укажите нужные ключи или настройки.
-
-4. Запустите сервер:
+3. Запустіть сервер:
 ```bash
-uvicorn main:app --reload --port 8000
+python -m uvicorn main:app --reload --port 8000
 ```
