@@ -91,7 +91,7 @@ In the repository root:
 dotnet run
 ```
 
-Open `http://localhost:5104` (or `https://localhost:7123`) in your browser.
+Open `http://localhost:5104` in your browser.
 
 ---
 
@@ -157,7 +157,7 @@ pip install -r requirements.txt
 python -m uvicorn main:app --reload --port 8000
 ```
 
-Backend will start at `http://127.0.0.1:8000`.
+Бекенд запуститься за адресою `http://127.0.0.1:8000`.
 
 ---
 
