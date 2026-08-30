@@ -26,38 +26,70 @@ from App.utils import safe_log, normalize_experience_text
 BATCH_SIZE = 5
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Rotating loading phrases — cycled every ~2s while AI is thinking.
+# Multilingual rotating loading phrases (cycles every ~2s while AI is thinking)
 # ─────────────────────────────────────────────────────────────────────────────
-THINKING_PHRASES = [
-    "Анализируем требования работодателя...",
-    "Сопоставляем ваш опыт с вакансией...",
-    "Проверяем соответствие навыков...",
-    "Сверяем технологический стек...",
-    "Оцениваем требования к опыту...",
-    "Анализируем уровень позиции...",
-    "Изучаем детали вакансии...",
-    "Ищем совпадения с вашим профилем...",
-    "Проверяем ключевые требования...",
-    "Оцениваем соответствие позиции...",
-    "Анализируем условия работы...",
-    "Сопоставляем требования и навыки...",
-    "Проверяем дополнительные условия...",
-    "Оцениваем перспективность вакансии...",
-    "Ищем важные детали в описании...",
-    "Взвешиваем критерии соответствия...",
-    "Проверяем возможные несоответствия...",
-    "Сравниваем вакансию с вашим профилем...",
-    "Оцениваем ключевые параметры...",
-    "Анализируем требования к кандидату...",
-    "Проверяем технологические требования...",
-    "Оцениваем релевантность вашего опыта...",
-    "Формируем оценку соответствия...",
-    "Проверяем, не спрятали ли тут зарплату в 8 пункте...",
-    "Делаем перерыв на кофе...",
-    "Ищем того самого кандидата... кажется, это вы.",
-    "Проверяем, действительно ли нужен 'молодой специалист с 10 годами опыта'...",
-    "Сверяем требования... и делаем вид, что всё под контролем.",
-    "ИИ делает вид, что не заметил 'стрессоустойчивость' в требованиях...",
+THINKING_PHRASES_UK = [
+    "Аналізуємо вимоги роботодавця...",
+    "Зіставляємо ваш досвід із вакансією...",
+    "Перевіряємо відповідність навичок...",
+    "Звіряємо технологічний стек...",
+    "Оцінюємо вимоги до досвіду...",
+    "Аналізуємо рівень позиції...",
+    "Вивчаємо деталі вакансії...",
+    "Шукаємо збіги з вашим профілем...",
+    "Перевіряємо ключові вимоги...",
+    "Оцінюємо відповідність позиції...",
+    "Аналізуємо умови роботи...",
+    "Зіставляємо вимоги та навички...",
+    "Перевіряємо додаткові умови...",
+    "Оцінюємо перспективність вакансії...",
+    "Шукаємо важливі деталі в описі...",
+    "Зважуємо критерії відповідності...",
+    "Перевіряємо можливі невідповідності...",
+    "Порівнюємо вакансію з вашим профілем...",
+    "Оцінюємо ключові параметри...",
+    "Аналізуємо вимоги до кандидата...",
+    "Перевіряємо технологічні вимоги...",
+    "Оцінюємо релевантність вашого досвіду...",
+    "Формуємо оцінку відповідності...",
+    # Великодки
+    "Гладимо котика...",
+    "Робимо перерву на каву...",
+    "Шукаємо того самого кандидата... здається, це ви.",
+    "Сидимо у тік-тоці...",
+    "Звіряємо вимоги... і робимо вигляд, що все під контролем.",
+]
+
+THINKING_PHRASES_EN = [
+    "Analyzing employer requirements...",
+    "Matching your experience with the job...",
+    "Verifying required skill set...",
+    "Checking technology stack fit...",
+    "Evaluating experience expectations...",
+    "Assessing seniority level requirements...",
+    "Reviewing vacancy details...",
+    "Finding matches with your profile...",
+    "Checking core job requirements...",
+    "Evaluating candidate-to-job match...",
+    "Analyzing work conditions...",
+    "Comparing skills and prerequisites...",
+    "Reviewing perks and additional conditions...",
+    "Evaluating position prospects...",
+    "Extracting key details from description...",
+    "Weighing match criteria...",
+    "Checking potential discrepancies...",
+    "Comparing position against your profile...",
+    "Assessing key parameters...",
+    "Analyzing candidate expectations...",
+    "Verifying tech requirements...",
+    "Evaluating relevance of your experience...",
+    "Formulating final match score...",
+    # Easter eggs
+    "Petting the cat...",
+    "Brewing a quick cup of coffee...",
+    "Searching for the perfect candidate... looks like it's you.",
+    "Watching TikTok",
+    "Reviewing requirements... and pretending everything is under control.",
 ]
 
 
@@ -120,14 +152,26 @@ class AiEvaluator:
 
         safe_log(f"[AI] Анализируем {total} вакансий через {self.provider} ({self.model})...")
 
+        lang = (criteria.language or "").lower()
+        if "en" in lang or "eng" in lang:
+            phrases = THINKING_PHRASES_EN
+            batch_progress_tmpl = "AI analyzing batch {batch_num}/{total_batches} (jobs {start_idx}–{end_idx})..."
+            batch_done_tmpl = "Batch {batch_num}/{total_batches} ready — analyzed {done_count}/{total}"
+            batch_phrase_tmpl = "{phrase} (batch {batch_num}/{total_batches})"
+        else:
+            phrases = THINKING_PHRASES_UK
+            batch_progress_tmpl = "ШІ аналізує батч {batch_num}/{total_batches} (вакансії {start_idx}–{end_idx})..."
+            batch_done_tmpl = "Батч {batch_num}/{total_batches} готовий — проаналізовано {done_count}/{total}"
+            batch_phrase_tmpl = "{phrase} (батч {batch_num}/{total_batches})"
+
         last_phrase_idx: int = -1
 
         def pick_random_phrase() -> str:
             nonlocal last_phrase_idx
-            available = [i for i in range(len(THINKING_PHRASES)) if i != last_phrase_idx]
+            available = [i for i in range(len(phrases)) if i != last_phrase_idx]
             chosen_idx = random.choice(available) if available else 0
             last_phrase_idx = chosen_idx
-            return THINKING_PHRASES[chosen_idx]
+            return phrases[chosen_idx]
 
         for batch_num in range(1, total_batches + 1):
             start = (batch_num - 1) * BATCH_SIZE
@@ -148,8 +192,12 @@ class AiEvaluator:
             if on_progress:
                 on_progress(
                     pct_start,
-                    f"ИИ анализирует батч {batch_num}/{total_batches} "
-                    f"(вакансии {start + 1}–{min(start + len(batch), total)})...",
+                    batch_progress_tmpl.format(
+                        batch_num=batch_num,
+                        total_batches=total_batches,
+                        start_idx=start + 1,
+                        end_idx=min(start + len(batch), total),
+                    ),
                 )
 
             result_holder: list = []
@@ -175,7 +223,7 @@ class AiEvaluator:
                         pct_end - 1,
                     )
                     phrase = pick_random_phrase()
-                    on_progress(tick_pct, f"{phrase} (батч {batch_num}/{total_batches})")
+                    on_progress(tick_pct, batch_phrase_tmpl.format(phrase=phrase, batch_num=batch_num, total_batches=total_batches))
 
             elapsed_total = time.time() - t0
 
@@ -194,8 +242,12 @@ class AiEvaluator:
             if on_progress:
                 on_progress(
                     pct_end,
-                    f"Батч {batch_num}/{total_batches} готов — "
-                    f"проанализировано {len(evaluated_vacancies)}/{total}",
+                    batch_done_tmpl.format(
+                        batch_num=batch_num,
+                        total_batches=total_batches,
+                        done_count=len(evaluated_vacancies),
+                        total=total,
+                    ),
                 )
 
             if start + BATCH_SIZE < total:

@@ -113,7 +113,9 @@ async def parse_jobs_stream(body: ParseRequest):
     def run_analysis() -> None:
         platforms_str = ", ".join(p.upper() for p in body.platforms)
         safe_log(f"\n[START] Платформы: {platforms_str} | Запрос: '{body.keyword}' | Язык: {body.language}")
-        push_event({"type": "progress", "percent": 5, "message": f"Сбор вакансий: {platforms_str}..."})
+        is_en = "en" in (body.language or "").lower()
+        init_msg = f"Gathering jobs: {platforms_str}..." if is_en else f"Збір вакансій: {platforms_str}..."
+        push_event({"type": "progress", "percent": 5, "message": init_msg})
 
         criteria = JobCriteria(
             target_role=body.target_role,
@@ -161,25 +163,28 @@ async def parse_jobs_stream(body: ParseRequest):
 
             if total == 0:
                 safe_log("[FINISH] Вакансий не найдено.")
+                empty_msg = f"No vacancies found for '{body.keyword}'." if is_en else f"За запитом '{body.keyword}' нічого не знайдено."
                 push_event({
                     "type": "complete", "status": "success", "count": 0,
-                    "data": [], "message": f"По запросу '{body.keyword}' ничего не найдено.",
+                    "data": [], "message": empty_msg,
                 })
                 return
 
             total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+            ai_init_msg = f"Found {total} unique jobs. AI evaluation ({total_batches} batches)..." if is_en else f"Знайдено {total} унікальних. ШІ-аналіз ({total_batches} батч.)..."
             push_event({
                 "type": "progress", "percent": 15,
-                "message": f"Найдено {total} уникальных. ИИ-анализ ({total_batches} батч.)...",
+                "message": ai_init_msg,
             })
 
             evaluator = AiEvaluator(api_key=body.api_key)
 
             def on_model_switch(old: str, new: str) -> None:
                 safe_log(f"    [MODEL SWITCH] {old} -> {new}")
+                switch_msg = f"⚠ Rate limit for «{old}» reached — switched to «{new}»" if is_en else f"⚠ Ліміт моделі «{old}» вичерпано — переключилися на «{new}»"
                 push_event({
                     "type": "model_switch", "percent": -1,
-                    "message": f"⚠ Лимит модели «{old}» исчерпан — переключились на «{new}»",
+                    "message": switch_msg,
                 })
 
             evaluator.on_model_switch = on_model_switch
@@ -191,7 +196,8 @@ async def parse_jobs_stream(body: ParseRequest):
             )
 
             safe_log(f"[FINISH] Готово к отправке: {len(evaluated)}")
-            push_event({"type": "progress", "percent": 97, "message": "Сохранение результатов..."})
+            saving_msg = "Saving results..." if is_en else "Збереження результатів..."
+            push_event({"type": "progress", "percent": 97, "message": saving_msg})
             push_event({
                 "type": "complete", "status": "success",
                 "count": len(evaluated), "data": evaluated,

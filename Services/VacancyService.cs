@@ -18,6 +18,7 @@ public interface IVacancyService
     Task ClearCacheAsync(CancellationToken ct = default);
     Task ToggleSaveAsync(Vacancy vac, CancellationToken ct = default);
     Task RejectVacancyAsync(Vacancy vac, CancellationToken ct = default);
+    Task RestoreVacancyAsync(Vacancy vac, CancellationToken ct = default);
     Task SaveNewVacanciesAsync(IEnumerable<Vacancy> newVacancies, CancellationToken ct = default);
 }
 
@@ -63,6 +64,15 @@ public class VacancyService(AppDbContext context) : IVacancyService
 
         vac.IsRejected = true;
         vac.IsSaved = false;
+        _context.Vacancies.Update(vac);
+        await _context.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task RestoreVacancyAsync(Vacancy vac, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(vac);
+
+        vac.IsRejected = false;
         _context.Vacancies.Update(vac);
         await _context.SaveChangesAsync(ct).ConfigureAwait(false);
     }

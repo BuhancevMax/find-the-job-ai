@@ -22,6 +22,7 @@ builder.Services.AddHttpClient<IParsingBackendClient, ParsingBackendClient>(clie
 });
 
 builder.Services.AddScoped<IVacancyService, VacancyService>();
+builder.Services.AddScoped<ILocalizationService, LocalizationService>();
 
 var app = builder.Build();
 
