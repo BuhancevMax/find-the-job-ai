@@ -52,55 +52,50 @@ Using **OpenRouter's Free Tier LLMs** (`:free`), the system analyzes job descrip
 
 ### 🚀 Quick Start Guide
 
-#### Prerequisites
+#### ⚡ Option A: Standalone 1-Click Launch (Recommended for Windows)
 
+No need to install .NET SDK or Python!
+
+1. Download **`FindTheJobAI-v0.9.0-win-x64.zip`** from [Latest Releases](https://github.com/BuhancevMax/find-the-job-ai/releases).
+2. Extract the archive to any folder.
+3. Double-click **`FindTheJobAI.exe`** — it will automatically launch the AI backend, start the web interface, and open your default browser at `http://localhost:5104`.
+
+---
+
+#### 🛠️ Option B: Run from Source
+
+##### Prerequisites
 * [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 * [Python 3.10+](https://www.python.org/downloads/)
 * Free API key from [openrouter.ai/keys](https://openrouter.ai/keys) (no credit card required)
 
----
+##### 1-Click Script:
+* **Windows**: Double-click `start.bat`
+* **Linux / macOS**: Run `./start.sh`
 
-#### 1. Setup & Run Python Microservice
-
-```bash
-cd PythonScripts
-
-# Create and activate virtual environment
-python -m venv .venv
-
-# Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-
-# Linux / macOS:
-# source .venv/bin/activate
-
-# Install dependencies & run
-pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 8000
-```
-
-Backend will start at `http://127.0.0.1:8000`.
+##### Or Manual Launch:
+1. **Python Backend**:
+   ```bash
+   cd PythonScripts
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1   # or source .venv/bin/activate
+   pip install -r requirements.txt
+   python -m uvicorn main:app --reload --port 8000
+   ```
+2. **Blazor Frontend**:
+   ```bash
+   dotnet run
+   ```
+   Open `http://localhost:5104` in your browser.
 
 ---
 
-#### 2. Run Blazor Frontend Application
-
-In the repository root:
-
-```bash
-dotnet run
-```
-
-Open `http://localhost:5104` in your browser.
-
----
-
-#### 3. How to Use
+#### 💡 How to Use
 
 1. Enter your OpenRouter API key (`sk-or-v1-...`).
-2. Pick your tech stack chips (e.g. C#, .NET, Python, React, SQL).
+2. Pick your tech stack chips (e.g. `C#`, `.NET`, `Python`, `React`, `SQL`).
 3. Select your target seniority, experience, work format, and salary expectations.
-4. Click **«Find Vacancies»** (Знайти вакансії) to watch real-time parallel streaming and AI insights!
+4. Click **«Find Vacancies»** (`Знайти вакансії`) to watch real-time parallel streaming and AI insights!
 
 <br/>
 
@@ -132,41 +127,38 @@ Open `http://localhost:5104` in your browser.
 
 ### 🚀 Інструкція із запуску
 
-#### Вимоги
+#### ⚡ Варіант А: Запуск без встановлення SDK (Рекомендовано для Windows)
 
+Не потребує встановлення .NET SDK чи Python!
+
+1. Завантажте архів **`FindTheJobAI-v0.9.0-win-x64.zip`** зі сторінки [Останніх релізів](https://github.com/BuhancevMax/find-the-job-ai/releases).
+2. Розпакуйте архів у будь-яку зручну папку.
+3. Запустіть файл **`FindTheJobAI.exe`** — додаток автоматично запустить ШІ-бекенд та відкриє інтерфейс у браузері за адресою `http://localhost:5104`.
+
+---
+
+#### 🛠️ Варіант Б: Запуск із вихідного коду
+
+##### Вимоги
 * [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 * [Python 3.10+](https://www.python.org/downloads/)
 * Безкоштовний API ключ з [openrouter.ai/keys](https://openrouter.ai/keys)
 
----
+##### Запуск через 1-клік скрипт:
+* **Windows**: двічі клікніть `start.bat`
+* **Linux / macOS**: виконайте `./start.sh`
 
-#### 1. Запуск бекенду (Python)
-
-```bash
-cd PythonScripts
-
-python -m venv .venv
-
-# Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-
-# Linux / macOS:
-# source .venv/bin/activate
-
-pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 8000
-```
-
-Бекенд запуститься за адресою `http://127.0.0.1:8000`.
-
----
-
-#### 2. Запуск фронтенду (Blazor)
-
-У кореневій папці проєкту:
-
-```bash
-dotnet run
-```
-
-Перейдіть за адресою `http://localhost:5104` у вашому браузері.
+##### Або ручний запуск:
+1. **Python бекенд**:
+   ```bash
+   cd PythonScripts
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1   # або source .venv/bin/activate
+   pip install -r requirements.txt
+   python -m uvicorn main:app --reload --port 8000
+   ```
+2. **Blazor фронтенд**:
+   ```bash
+   dotnet run
+   ```
+   Відкрийте `http://localhost:5104` у вашому браузері.
